@@ -9,11 +9,11 @@ one board with the screen, touch, battery header, and USB-C all on it. No
 Raspberry Pi, no Linux, no soldering.
 
 <p align="center">
-  <img src="docs/img/meters.jpg"   width="30%" alt="Meters — session and weekly usage bars">
-  <img src="docs/img/timer.jpg"    width="30%" alt="Timer — live countdown to the next reset">
-  <img src="docs/img/sprocket.jpg" width="30%" alt="the kitsune — the mascot reacting to headroom">
+  <img src="docs/img/meters.jpg"  width="30%" alt="Meters — every usage window with a bar and a reset countdown">
+  <img src="docs/img/focus.jpg"   width="30%" alt="Focus — one big number for the window closest to running out">
+  <img src="docs/img/kitsune.jpg" width="30%" alt="The kitsune — one tail left, and the caption reads running low">
 </p>
-<p align="center"><sub>Meters · live reset countdown · the kitsune — tap to cycle</sub></p>
+<p align="center"><sub>Meters · Focus · the kitsune, down to one tail — tap to cycle</sub></p>
 
 ## Before you buy: you need Claude Code
 
@@ -24,9 +24,12 @@ So it needs, on the computer you set it up from:
 - **Claude Code installed and signed in.** Claude Code comes with the paid
   Claude plans (Pro and Max) and isn't part of the free tier — so a free
   account leaves the board with no login to read.
-- **One pairing, once.** After that the board polls on its own over Wi-Fi and
-  the computer can be off — but the initial pairing hands it that login, so it
-  has to exist first.
+- **One pairing, once.** After that the board reads your usage on its own over
+  Wi-Fi and tops itself up from your computer whenever that's on. Switch the
+  computer off for more than a few hours and the board pauses until you're back
+  — it's handed a short-lived token it deliberately can't renew, so that it can
+  never sign *you* out of Claude Code. (Pairing hands it that login, so Claude
+  Code has to be signed in first.)
 
 If `claude` runs on your machine and you're signed in, you're good.
 
@@ -37,6 +40,13 @@ Everything runs on the one ~$26 board — no Raspberry Pi, no soldering.
 - **Waveshare ESP32-S3-Touch-LCD-2:**
   [on Amazon](https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20) ·
   [direct from Waveshare](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)
+
+**Coming soon: a bigger screen.** Support for the
+[Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)
+(2.16", 480×480 AMOLED) is being built — pins, display driver and build target
+are already in the firmware. **Don't buy one yet:** no image is published for it
+and the flasher above only offers the 2" LCD board, so there is nothing to
+install on it today. This page will say so when there is.
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
 

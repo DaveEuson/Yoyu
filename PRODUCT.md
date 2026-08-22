@@ -254,11 +254,13 @@ polls the same account; charge-only USB-C cables; unsupported browsers.
 
 ## Evidence on Hand
 
-- Real product photography: `docs/img/meters.jpg`, `docs/img/timer.jpg`,
-  `docs/img/sprocket.jpg` — the actual board running, used in the README.
-  **`sprocket.jpg` is stale**: it photographs the retired blue robot mascot and
-  is the README's hero image. It needs re-shooting against the kitsune before
-  any surface leans on it; do not present it as current.
+- Real product photography: `docs/img/meters.jpg`, `docs/img/focus.jpg`,
+  `docs/img/kitsune.jpg` — the actual board running v1.6.x, shot 19 Aug 2026 and
+  used in the README. The kitsune shot catches it on one tail with "running
+  low!", so the mascot's gauge is legible in the photograph itself rather than
+  only in the caption. `docs/img/timer.jpg` is older (Jul 2026) and no longer
+  used on any surface; the retired `sprocket.jpg`, which photographed the blue
+  robot mascot, has been deleted.
 - Working firmware, companion, and tests (`companion/test_companion.py`).
 - Real published docs: `docs/TROUBLESHOOTING.md`, `docs/HARDENING.md`
   (threat model), `docs/RELEASE.md`.
