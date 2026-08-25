@@ -72,6 +72,23 @@ No tools, no command line:
    it finds the board on your network and feeds it your real usage. Or make the
    board self-contained (below).
 
+## Running two
+
+Both boards on one network is a supported setup, not a workaround. The
+companion finds every board and feeds them all from a single read of your
+usage, and the tray gives each one its own submenu.
+
+Two things are per board rather than shared: **pairing** (each holds its own
+top-up key, so pair each one you want to run without this computer) and
+**`yoyu.local`**, which only ever names one of them — the second board to
+start comes up as `yoyu-2.local`, and that assignment swaps when they reboot
+together. Each board prints its own permanent id at the bottom of its
+settings page.
+
+If you add a second board later, run `--rescan` or use the tray's **Look for
+boards** — nothing goes looking again on its own while a saved board is still
+answering.
+
 ## How it gets your usage
 
 - **Companion app (easiest).** A small app on the computer where you use Claude

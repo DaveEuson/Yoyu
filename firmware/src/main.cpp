@@ -1718,10 +1718,30 @@ static String adminTokenField() {
            "<input name=token type=password placeholder='required to save'>");
 }
 
+// A name for this particular board that survives a reboot.
+//
+// Two of these on one network is now an ordinary situation rather than an edge
+// case, and everything that has to tell them apart -- the companion's per-board
+// top-up keys, the list of boards it feeds, the tray menu -- needs an identity
+// that stays put. mDNS does not provide one. ESP-IDF resolves the yoyu.local
+// collision by itself, renaming whichever board finished probing second to
+// yoyu-2.local, so both are reachable by name; but that name is assigned in
+// boot order and the two swap when they restart together. The MAC does not.
+static const char *deviceId() {
+  static char id[7] = "";
+  if (!id[0]) {
+    uint8_t m[6];
+    WiFi.macAddress(m);            // set once Wi-Fi is up, which it is by here
+    snprintf(id, sizeof(id), "%02x%02x%02x", m[3], m[4], m[5]);
+  }
+  return id;
+}
+
 static void handleStatus() {
   JsonDocument doc;
   doc["app"] = "Yoyu";        // discovery marker the companion looks for
   doc["mini"] = true;
+  doc["id"] = deviceId();     // stable across reboots; "board" is only a model
   // What this board is actually running. The release checklist asks you to
   // confirm an OTA "reboots on the new version", and without this that can only
   // be done by eye or by scraping /update — neither of which works for a board
@@ -3233,6 +3253,13 @@ static void handleRoot() {
   s += ":";
   s += API_PORT;
   s += F(" &middot; yoyu.local:8080</p>"
+         "<p class=muted style='text-align:center;font-size:.78rem;margin:0'>"
+         "this board is <b>");
+  s += deviceId();
+  s += F("</b> &middot; ");
+  s += BOARD_SLUG;
+  s += F(" &middot; if you run two, yoyu.local reaches whichever booted first"
+         "</p>"
          "<p class=muted style='text-align:center;font-size:.78rem;margin:2px 0 8px'>"
          "Made by Dave Euson with <span style='color:#d97757'>&hearts;</span> "
          "in San Diego &middot; &copy; 2026 Dave Euson</p>"
@@ -3738,8 +3765,14 @@ static void startApi() {
                          "X-Topup-Key"};
   server->collectHeaders(watch, 4);
   server->begin();
+  // Left as "yoyu" deliberately. A second board does not break this: ESP-IDF
+  // probes the name, finds it taken and comes up as yoyu-2 instead, so
+  // yoyu.local keeps meaning a board for everyone who owns one and every doc
+  // that prints it stays true.
   MDNS.begin("yoyu");
   MDNS.addService("http", "tcp", API_PORT);
+  MDNS.addServiceTxt("http", "tcp", "id", deviceId());
+  MDNS.addServiceTxt("http", "tcp", "board", BOARD_SLUG);
 }
 
 void setup() {

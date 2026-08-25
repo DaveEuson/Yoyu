@@ -37,6 +37,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # TLS trust store. A PyInstaller-frozen binary (esp. on macOS) often can't find
@@ -687,14 +688,40 @@ def _config_path():
 
 # ------------------------------------------------------ auto-discover the Pi
 
-def _probe(url):
+def _probe_info(url, timeout=0.8):
+    """The board's own /api/status, or None if whatever answered isn't a board.
+
+    Discovery needs more than yes/no now. With two boards on one network the
+    caller has to be able to tell which is which, and the only thing that says
+    so is in the status body -- not in the address, which moves, and not in the
+    mDNS name, which is handed out in boot order.
+    """
     try:
         req = urllib.request.Request(url.rstrip("/") + "/api/status")
-        with urllib.request.urlopen(req, timeout=0.8) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        return data.get("app") in (APP_MARKER,) + LEGACY_MARKERS
     except Exception:
-        return False
+        return None
+    if data.get("app") not in (APP_MARKER,) + LEGACY_MARKERS:
+        return None
+    return data
+
+
+def _probe(url):
+    return _probe_info(url) is not None
+
+
+_ID_CACHE = {}
+
+
+def board_id(url, refresh=False):
+    """This board's stable name. None if it can't be reached, or if it runs
+    firmware older than 1.7.0, which had no id to give."""
+    u = url.rstrip("/")
+    if refresh or u not in _ID_CACHE:
+        info = _probe_info(u, timeout=3)
+        _ID_CACHE[u] = (info or {}).get("id")
+    return _ID_CACHE[u]
 
 
 def _local_prefixes():
@@ -734,20 +761,76 @@ def discover_pi(port=8080):
         url = f"http://{host}:{port}"
         if _probe(url):
             return url
+    found = discover_all(port)
+    return found[0]["url"] if found else None
+
+
+def discover_all(port=8080, quiet=False):
+    """Every board on the LAN, rather than the first one that answers.
+
+    discover_pi() stops at the first hit, which was right when there was one
+    board and is wrong now that two ship. The second board was never found and
+    so was never fed -- it just sat there saying it was waiting for your
+    computer. Each board comes back with its own status so callers can tell
+    them apart without asking again.
+    """
     prefixes = _local_prefixes()
     if not prefixes:
-        return None
+        return []
     urls = [f"http://{p}.{i}:{port}" for p in prefixes for i in range(1, 255)]
-    print("Looking for your tracker on the network...")
+    if not quiet:
+        print("Looking for your boards on the network...")
+    found = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
-        futures = {ex.submit(_probe, u): u for u in urls}
+        futures = {ex.submit(_probe_info, u): u for u in urls}
         for fut in concurrent.futures.as_completed(futures):
             try:
-                if fut.result():
-                    return futures[fut]
+                info = fut.result()
             except Exception:
-                pass
-    return None
+                continue
+            if info:
+                found.append({"url": futures[fut], "id": info.get("id"),
+                              "board": info.get("board") or "board",
+                              "version": info.get("version") or "?"})
+    def _octets(b):
+        try:
+            return [int(x) for x in
+                    b["url"].split("//")[1].split(":")[0].split(".")]
+        except ValueError:
+            return [0]
+    found.sort(key=_octets)
+    for b in found:
+        _ID_CACHE[b["url"].rstrip("/")] = b["id"]
+    return found
+
+
+def describe_board(b):
+    return "%s (%s, v%s) at %s" % (b["id"] or "unidentified", b["board"],
+                                   b["version"], b["url"])
+
+
+def resolve_targets(saved, rescan=False):
+    """The boards to feed, re-discovering when what was saved has gone stale.
+
+    A saved address that no longer answers used to mean pushing into the void
+    forever: the value was truthy, so discovery never ran a second time. That
+    is exactly what a rename or a DHCP move leaves behind -- a config still
+    naming headroom.local while two boards sit on the network unfed.
+    """
+    targets = [t.strip() for t in str(saved or "").split(",") if t.strip()]
+    if targets and not rescan and any(_probe(t) for t in targets):
+        return ",".join(targets)
+    found = discover_all()
+    if not found:
+        return ",".join(targets)      # keep what we had; it may just be off
+    urls = ",".join(b["url"] for b in found)
+    for b in found:
+        print("Found " + describe_board(b))
+    if len(found) > 1:
+        print("Feeding all %d. They stay in the config, so this only has to "
+              "be found once." % len(found))
+    save_pi(urls)
+    return urls
 
 
 def _merge_config(**fields):
@@ -781,10 +864,86 @@ def _topup_keys():
 
 
 def save_topup_key(url, key):
-    """Per board, so feeding two of them doesn't have one clobber the other."""
+    """Filed under the board's own id rather than its address.
+
+    It used to be keyed by whatever URL you happened to pair against. With one
+    board that was the same thing. With two it is not: yoyu.local names
+    whichever board booted first, so one board's key could be looked up for the
+    other, and DHCP moves the addresses underneath both.
+    """
+    ident = board_id(url) or url.rstrip("/")
     keys = _topup_keys()
-    keys[url.rstrip("/")] = key
+    keys[ident] = key
     _merge_config(topup_keys=keys)
+
+
+def drop_topup_key(url):
+    keys = _topup_keys()
+    for k in (board_id(url), url.rstrip("/")):
+        if k and keys.pop(k, None) is not None:
+            _merge_config(topup_keys=keys)
+
+
+def _url_ip(url):
+    """The address a URL actually reaches.
+
+    Two spellings of one board have to match: a key paired against
+    yoyu.local belongs to the board now sitting at 192.168.0.77, and looking it
+    up by the address discovery found would otherwise miss it and quietly stop
+    topping that board up.
+    """
+    try:
+        host = urllib.parse.urlsplit(url).hostname
+        return socket.gethostbyname(host) if host else None
+    except (OSError, ValueError):
+        return None
+
+
+def topup_key_for(url):
+    """This board's key: by id, then by address, then by where that address
+    actually points. The last one is what carries a key written before the
+    board had an id -- older firmware has none to give."""
+    keys = _topup_keys()
+    ident = board_id(url)
+    if ident and ident in keys:
+        return keys[ident]
+    exact = keys.get(url.rstrip("/"))
+    if exact:
+        return exact
+    ip = _url_ip(url)
+    if not ip:
+        return None
+    for k, v in keys.items():
+        if k.startswith("http") and _url_ip(k) == ip:
+            return v
+    return None
+
+
+def migrate_topup_keys():
+    """Re-file address-keyed keys under the board's own id.
+
+    Runs once at startup and does nothing afterwards. A key whose address no
+    longer resolves is left exactly where it is rather than dropped -- that
+    board may simply be switched off, and the key is the only thing standing
+    between it and having to be paired again. Guessing the wrong board is safe
+    besides: the board checks the key before it reads the body, so a key
+    offered to the wrong one is refused without a token ever being looked at.
+    """
+    keys = _topup_keys()
+    moved = {}
+    for k, v in list(keys.items()):
+        if not k.startswith("http"):
+            continue
+        ident = board_id(k)
+        if ident and ident != k:
+            moved[ident] = v
+            keys.pop(k)
+            print("Filed the top-up key for %s under the board's own name (%s)."
+                  % (k, ident))
+    if moved:
+        keys.update(moved)
+        _merge_config(topup_keys=keys)
+    return moved
 
 
 _last_topup = {}
@@ -794,7 +953,7 @@ TOPUP_EVERY = 1800          # seconds; the access token lasts hours, not minutes
 def maybe_top_up(url, now=None):
     """Rate-limited top-up. Returns True if one was actually sent."""
     now = time.time() if now is None else now
-    if not _topup_keys().get(url.rstrip("/")):
+    if not topup_key_for(url):
         return False                      # not a board we paired
     if now - _last_topup.get(url, 0) < TOPUP_EVERY:
         return False
@@ -813,7 +972,7 @@ def top_up_token(url, key=None):
     So the refresh stays here, where it always was, and the board is handed the
     short-lived result. Returns True if the board took it.
     """
-    key = key or _topup_keys().get(url.rstrip("/"))
+    key = key or topup_key_for(url)
     if not key:
         return False                      # never paired from this computer
     creds, save_fn = read_creds()
@@ -832,6 +991,14 @@ def top_up_token(url, key=None):
                          {"Content-Type": "application/json",
                           "X-Topup-Key": key}, timeout=20)
     except (urllib.error.URLError, OSError, ValueError):
+        return False
+    if not res.get("ok") and "top-up key" in str(res.get("error", "")):
+        # Wrong board, or the board was disconnected and minted a new key.
+        # Retrying this one forever cannot fix either.
+        drop_topup_key(url)
+        print(f"{url} won't accept this computer's top-up key. Pair it again "
+              "(tray: Pair board) -- until then it runs on what it already has.",
+              file=sys.stderr)
         return False
     return bool(res.get("ok"))
 
@@ -1342,7 +1509,10 @@ def _single_instance():
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser(description="Yoyu companion")
-    ap.add_argument("--pi", default=cfg["pi"],
+    ap.add_argument("--rescan", action="store_true",
+                    help="look for boards again even if the saved ones answer "
+                         "-- use after adding a second board")
+    ap.add_argument("--pi", default=None,
                     help="tracker URL(s), comma-separated for multiple "
                          "devices (auto-discovered if omitted)")
     ap.add_argument("--token", default=cfg["token"])
@@ -1405,16 +1575,17 @@ def main():
               else "Nothing to remove.")
         return
 
+    saved_pi = cfg["pi"]
     cfg["pi"], cfg["token"], cfg["interval"] = args.pi, args.token, args.interval
     if not cfg["pi"]:
-        cfg["pi"] = discover_pi()
-        if cfg["pi"]:
-            print(f"Found your tracker at {cfg['pi']}")
-            save_pi(cfg["pi"])
-        else:
-            ap.error("couldn't find the tracker on your network. Make sure it's "
-                     "powered on and on the same Wi-Fi, or pass "
-                     "--pi http://<its-address>:8080")
+        # Not just "is it set" but "does it still answer": a stale saved
+        # address is truthy and would otherwise never be looked at again.
+        cfg["pi"] = resolve_targets(saved_pi, rescan=args.rescan)
+    if not cfg["pi"]:
+        ap.error("couldn't find a board on your network. Make sure it's "
+                 "powered on and on the same Wi-Fi, or pass "
+                 "--pi http://<its-address>:8080")
+    migrate_topup_keys()
 
     if args.once:
         print(f"Yoyu companion -> {cfg['pi']} (single push)")
