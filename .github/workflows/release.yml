@@ -98,24 +98,60 @@ jobs:
       - name: Assemble flash images
         working-directory: firmware
         run: |
-          BUILD=.pio/build/headroom-mini
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
           mkdir -p out
-          # Individual parts. The flasher writes these at their offsets and
-          # skips the NVS region (0x9000), so saved Wi-Fi / pairing / settings
-          # survive an update.
-          cp "$BUILD/bootloader.bin" out/headroom-mini-bootloader.bin
-          cp "$BUILD/partitions.bin" out/headroom-mini-partitions.bin
-          cp "$BOOT_APP0"            out/headroom-mini-boot_app0.bin
-          cp "$BUILD/firmware.bin"   out/headroom-mini-app.bin
-          # Single full-flash image for esptool / manual users.
-          esptool.py --chip esp32s3 merge_bin \
-            --flash_mode keep --flash_freq keep --flash_size keep \
-            -o out/headroom-mini-merged.bin \
-            0x0     "$BUILD/bootloader.bin" \
-            0x8000  "$BUILD/partitions.bin" \
-            0xe000  "$BOOT_APP0" \
-            0x10000 "$BUILD/firmware.bin"
+          # $1 = PlatformIO env, $2 = release asset prefix. The two differ on
+          # purpose for the LCD board: its assets stay named headroom-mini-*
+          # because boards in the field fetch those exact names for OTA, and
+          # renaming them would 404 every one of them.
+          assemble() {
+            B=".pio/build/$1"
+            # Individual parts. The flasher writes these at their offsets and
+            # skips the NVS region (0x9000), so saved Wi-Fi / pairing / settings
+            # survive an update.
+            cp "$B/bootloader.bin" "out/$2-bootloader.bin"
+            cp "$B/partitions.bin" "out/$2-partitions.bin"
+            cp "$BOOT_APP0"        "out/$2-boot_app0.bin"
+            cp "$B/firmware.bin"   "out/$2-app.bin"
+            # Single full-flash image for esptool / manual users.
+            esptool.py --chip esp32s3 merge_bin \
+              --flash_mode keep --flash_freq keep --flash_size keep \
+              -o "out/$2-merged.bin" \
+              0x0     "$B/bootloader.bin" \
+              0x8000  "$B/partitions.bin" \
+              0xe000  "$BOOT_APP0" \
+              0x10000 "$B/firmware.bin"
+          }
+          assemble headroom-mini  headroom-mini
+          assemble yoyu-amoled216 yoyu-amoled
+
+      - name: Refuse to publish an image built for the wrong board
+        working-directory: firmware
+        run: |
+          # Each image must reference its own OTA asset and no other. The two
+          # envs shared a source file for a while, and the AMOLED one compiled
+          # LCD firmware with a flag nothing read -- byte-different thanks to
+          # embedded build metadata, identical in behaviour. Publishing that
+          # hands someone an image that cannot drive their panel, and the
+          # release stays green while doing it.
+          #
+          # Checked on the baked-in URL rather than a hash, because that is the
+          # property that matters: both images are validly signed, so a board
+          # will accept the wrong one if it ever asks for it.
+          for want in headroom-mini yoyu-amoled; do
+            if ! grep -qa "$want-app.bin" "out/$want-app.bin"; then
+              echo "::error::out/$want-app.bin does not reference $want-app.bin --"
+              echo "::error::it was built for a different board. Check"
+              echo "::error::OTA_ASSET_PREFIX in firmware/src/boards.h."
+              exit 1
+            fi
+          done
+          if grep -qa "headroom-mini-app.bin" out/yoyu-amoled-app.bin; then
+            echo "::error::The AMOLED image also references the LCD asset, so an"
+            echo "::error::AMOLED board could fetch and accept LCD firmware."
+            exit 1
+          fi
+          echo "Each image references only its own OTA asset."
       - name: Sign the OTA app image (C2)
         working-directory: firmware
         env:
@@ -154,12 +190,16 @@ jobs:
             echo "::error::public key derived from the current secret."
             exit 1
           fi
-          openssl dgst -sha256 -sign ota_priv.pem \
-            -out out/headroom-mini-app.bin.sig out/headroom-mini-app.bin
-          openssl dgst -sha256 -verify embedded_pub.pem \
-            -signature out/headroom-mini-app.bin.sig out/headroom-mini-app.bin
+          # Every board's image. One without a .sig is un-installable on
+          # firmware that checks signatures, which is all of it.
+          for pfx in headroom-mini yoyu-amoled; do
+            openssl dgst -sha256 -sign ota_priv.pem \
+              -out "out/$pfx-app.bin.sig" "out/$pfx-app.bin"
+            openssl dgst -sha256 -verify embedded_pub.pem \
+              -signature "out/$pfx-app.bin.sig" "out/$pfx-app.bin"
+          done
           shred -u ota_priv.pem 2>/dev/null || rm -f ota_priv.pem
-          ls -l out/headroom-mini-app.bin.sig
+          ls -l out/*.sig
       - uses: actions/upload-artifact@v7
         with:
           name: firmware-images
@@ -192,6 +232,9 @@ jobs:
           for want in headroom-mini-app.bin headroom-mini-app.bin.sig \
                       headroom-mini-bootloader.bin headroom-mini-partitions.bin \
                       headroom-mini-boot_app0.bin headroom-mini-merged.bin \
+                      yoyu-amoled-app.bin yoyu-amoled-app.bin.sig \
+                      yoyu-amoled-bootloader.bin yoyu-amoled-partitions.bin \
+                      yoyu-amoled-boot_app0.bin yoyu-amoled-merged.bin \
                       YoyuCompanion-windows.exe YoyuCompanion-macos \
                       YoyuCompanion-linux; do
             if ! echo "$ASSETS" | grep -qx "$want"; then
