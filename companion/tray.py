@@ -39,18 +39,79 @@ INTERVAL = 120  # seconds between feeds
 # Shared state. Python's GIL makes these simple dict updates safe enough here.
 # url may be pinned up front via the HEADROOM_PI env var or a saved config, so
 # a fussy network (VPNs, work laptops) doesn't have to be auto-discovered.
-state = {"color": "amber", "status": "Starting…", "url": None, "swept": None,
-         "feeding": True, "fixed": False}
+# "url" is the first board and stays the one that single-target actions use;
+# "boards" is all of them. Two boards on one desk is now an ordinary setup
+# rather than a curiosity, and feeding only the first meant the second sat
+# there saying it was waiting for this computer.
+state = {"color": "amber", "status": "Starting…", "url": None, "boards": [],
+         "swept": None, "feeding": True, "fixed": False}
 
 
-def initial_url():
+def initial_urls():
     u = os.environ.get("HEADROOM_PI", "").strip()
     if not u:
         try:
-            u = (companion.load_config().get("pi") or "").split(",")[0].strip()
+            u = companion.load_config().get("pi") or ""
         except Exception:  # noqa: BLE001
             u = ""
-    return u.rstrip("/") or None
+    return [t.strip().rstrip("/") for t in str(u).split(",") if t.strip()]
+
+
+def _host(url):
+    return url.split("//")[-1].split(":")[0]
+
+
+def board_label(b):
+    """What to call a board in a menu. The id once the firmware offers one,
+    since addresses move and mDNS names are handed out in boot order."""
+    return "%s · %s" % (b.get("board") or "board", b.get("id") or _host(b["url"]))
+
+
+def set_boards(icon, boards):
+    """Adopt a new board list and rebuild the menu around it.
+
+    The per-board submenus are built from this list, so they have to be rebuilt
+    rather than merely refreshed when it changes.
+    """
+    state["boards"] = boards
+    state["url"] = boards[0]["url"] if boards else None
+    if icon is not None:
+        try:
+            icon.menu = build_menu()
+        except Exception:  # noqa: BLE001 - a menu rebuild is never worth dying for
+            pass
+
+
+def enrich_boards(icon):
+    """Put real names on boards restored from the config.
+
+    They come back from disk as bare addresses, which would leave the menu
+    offering two entries both called "board". One status call each, off the
+    main thread, and only for the ones we don't already know.
+    """
+    changed = False
+    for b in state["boards"]:
+        if b.get("id") or b.get("board") not in (None, "board"):
+            continue
+        info = companion._probe_info(b["url"], timeout=3)
+        if info:
+            b["id"] = info.get("id")
+            b["board"] = info.get("board") or "board"
+            b["version"] = info.get("version") or "?"
+            changed = True
+    if changed and icon is not None:
+        try:
+            icon.menu = build_menu()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def discover_boards(icon):
+    found = companion.discover_all(quiet=True)
+    if found:
+        companion.save_pi(",".join(b["url"] for b in found))
+        set_boards(icon, found)
+    return found
 
 COLORS = {"green": (94, 170, 100), "amber": (230, 164, 23),
           "red": (221, 77, 77), "grey": (140, 140, 140)}
@@ -95,8 +156,13 @@ def make_icon(color):
     return img
 
 
-def feed_once(url):
-    """One poll+push. Returns (color, status text, rate_limited)."""
+def feed_once(urls):
+    """One poll, pushed to every board. Returns (color, status, rate_limited).
+
+    One read of Anthropic feeds all of them: the usage is the same whoever is
+    displaying it, and polling once per board would multiply the rate limiting
+    that already bites here.
+    """
     try:
         live = companion.get_live_windows()
     except companion.LiveUnavailable as exc:
@@ -115,15 +181,34 @@ def feed_once(url):
         return "red", "Claude Code not signed in — run: claude, then /login", False
     windows, plan = live
     payload = {"windows": windows, "plan": plan, "source": "live"}
-    try:
-        res = companion.push(url, "", payload)
-    except Exception:  # noqa: BLE001 - any network error means "board unreachable"
-        return "red", "Can't reach the board", False
-    if res.get("ok"):
-        summary = ", ".join(f"{w['label'].split(' (')[0]} {w['utilization']:.0f}%"
-                            for w in windows[:3])
-        return "green", "Feeding · " + summary, False
-    return "amber", "Board rejected: " + str(res.get("error")), False
+    urls = [urls] if isinstance(urls, str) else list(urls)
+    delivered, rejected = 0, None
+    for url in urls:
+        # Keeps a self-hosted board going while this computer is on; skipped
+        # for any board this computer never paired with.
+        try:
+            companion.maybe_top_up(url)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            res = companion.push(url, "", payload)
+        except Exception:  # noqa: BLE001 - network error means "unreachable"
+            continue
+        if res.get("ok"):
+            delivered += 1
+        else:
+            rejected = str(res.get("error"))
+    if delivered == 0:
+        if rejected:
+            return "amber", "Board rejected: " + rejected, False
+        return "red", ("Can't reach the board" if len(urls) < 2
+                       else "Can't reach any of your %d boards" % len(urls)), False
+    summary = ", ".join(f"{w['label'].split(' (')[0]} {w['utilization']:.0f}%"
+                        for w in windows[:3])
+    # Only counted out loud when there is more than one, so the ordinary
+    # single-board line stays exactly as short as it was.
+    where = "" if len(urls) < 2 else " %d/%d ·" % (delivered, len(urls))
+    return "green", "Feeding" + where + " · " + summary, False
 
 
 def refresh(icon):
@@ -139,21 +224,21 @@ def worker(icon):
             refresh(icon)
             time.sleep(2)
             continue
-        if not state["url"]:
-            state.update(color="amber", status="Looking for your board…")
+        if not state["boards"]:
+            state.update(color="amber", status="Looking for your boards…")
             refresh(icon)
-            state["url"] = companion.discover_pi()
-            if not state["url"]:
+            if not discover_boards(icon):
                 state.update(color="red", status="No board found on this network")
                 refresh(icon)
                 time.sleep(15)
                 continue
-        color, status, rate_limited = feed_once(state["url"])
+        enrich_boards(icon)
+        urls = [b["url"] for b in state["boards"]]
+        color, status, rate_limited = feed_once(urls)
         if color == "green":
-            companion.save_pi(state["url"])            # remember it for next time
             ensure_autostart()                         # persist a working setup
         elif color == "red" and "reach" in status and not state["fixed"]:
-            state["url"] = None                        # lost it -> rediscover
+            set_boards(icon, [])                       # lost them -> rediscover
         # Rate-limited: back off exponentially (cap 30 min) so we stop pounding
         # the usage endpoint. A good read snaps us back to the normal cadence.
         if rate_limited:
@@ -187,18 +272,47 @@ def _ask_pair_code():
         return ""
 
 
-def do_pair(icon, item):
+def pair_board(url=None):
+    """Pair one specific board. With two on the desk, which one is not a
+    detail the tray can guess -- each holds its own key."""
+    def _cb(icon, item):
+        def run():
+            target = url or state["url"] or companion.discover_pi()
+            if not target:
+                state["status"] = "Pair failed: board not found"
+            else:
+                ok = companion.pair_device(target, ask_code=_ask_pair_code)
+                state["status"] = ("Paired — that board runs on its own now"
+                                   if ok else "Pair failed (wrong code, or no "
+                                   "Claude login here?)")
+            icon.update_menu()
+        threading.Thread(target=run, daemon=True).start()
+    return _cb
+
+
+def do_rescan(icon, item):
+    """Look again. Nothing rediscovers on its own once a saved board answers,
+    which is right until the day you plug in a second one."""
     def run():
-        url = state["url"] or companion.discover_pi()
-        if not url:
-            state["status"] = "Pair failed: board not found"
-        else:
-            ok = companion.pair_device(url, ask_code=_ask_pair_code)
-            state["status"] = ("Paired — the board runs on its own now"
-                               if ok else "Pair failed (wrong code, or no Claude "
-                               "login here?)")
+        state["status"] = "Looking for boards…"
+        icon.update_menu()
+        found = discover_boards(icon)
+        state["status"] = ("Found %d board%s" % (len(found),
+                                                 "" if len(found) == 1 else "s")
+                           if found else "No board found on this network")
         icon.update_menu()
     threading.Thread(target=run, daemon=True).start()
+
+
+def open_path(path, url=None):
+    """A menu callback that opens one of the board's config pages in a browser.
+    Rich forms (screen toggles, timezone, alert thresholds) live on the board so
+    they work even when this computer is off — the tray just deep-links to them."""
+    def _cb(icon, item):
+        target = url or state["url"]
+        if target:
+            webbrowser.open(target.rstrip("/") + path)
+    return _cb
 
 
 def do_open(icon, item):
@@ -206,14 +320,15 @@ def do_open(icon, item):
         webbrowser.open(state["url"])
 
 
-def open_path(path):
-    """A menu callback that opens one of the board's config pages in a browser.
-    Rich forms (screen toggles, timezone, alert thresholds) live on the board so
-    they work even when this computer is off — the tray just deep-links to them."""
-    def _cb(icon, item):
-        if state["url"]:
-            webbrowser.open(state["url"].rstrip("/") + path)
-    return _cb
+def _board_menu(url):
+    return pystray.Menu(
+        pystray.MenuItem("Open its page", open_path("", url)),
+        pystray.MenuItem("Screens, clock & auto-rotate…", open_path("/settings", url)),
+        pystray.MenuItem("Phone alerts…", open_path("/alerts", url)),
+        pystray.MenuItem("Update firmware…", open_path("/update", url)),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Pair this board", pair_board(url)),
+    )
 
 
 def toggle_feeding(icon, item):
@@ -275,7 +390,23 @@ def build_menu():
                          checked=lambda item: state["feeding"]),
         pystray.MenuItem("Start at login", toggle_autostart,
                          checked=lambda item: is_autostarted()),
-        pystray.MenuItem("Pair board (run without this computer)", do_pair),
+        *_board_items(),
+        pystray.MenuItem("Look for boards", do_rescan),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Quit", lambda icon, item: icon.stop()),
+    )
+
+
+def _board_items():
+    """One board keeps the flat menu it always had. More than one gets a
+    submenu each, because every entry below this point — pair, settings,
+    firmware — has to say which board it means."""
+    boards = state["boards"]
+    if len(boards) > 1:
+        return [pystray.MenuItem(board_label(b), _board_menu(b["url"]))
+                for b in boards]
+    return [
+        pystray.MenuItem("Pair board (run without this computer)", pair_board()),
         pystray.MenuItem("Open board page", do_open,
                          enabled=lambda item: bool(state["url"])),
         pystray.MenuItem("Settings", pystray.Menu(
@@ -283,9 +414,7 @@ def build_menu():
             pystray.MenuItem("Phone alerts…", open_path("/alerts")),
             pystray.MenuItem("Update firmware…", open_path("/update")),
         ), enabled=lambda item: bool(state["url"])),
-        pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Quit", lambda icon, item: icon.stop()),
-    )
+    ]
 
 
 def main():
@@ -304,10 +433,20 @@ def main():
                                         "entry" if len(swept) == 1 else "entries"))
         state["swept"] = swept
 
-    pinned = initial_url()
+    # Adopted without a probe: this runs before the worker thread and a slow
+    # network shouldn't hold up the icon appearing. The worker fills in what
+    # each one actually is, and rediscovers if none of them answer.
+    #
+    # "fixed" now means pinned by HEADROOM_PI, not merely remembered. It used
+    # to be set for a saved address too, which meant a board that moved or was
+    # renamed was never looked for again -- the config stayed truthy and the
+    # tray pushed into the void for as long as it ran.
+    pinned = initial_urls()
     if pinned:
-        state["url"] = pinned
-        state["fixed"] = True
+        state["boards"] = [{"url": u, "board": "board", "id": None}
+                           for u in pinned]
+        state["url"] = pinned[0]
+        state["fixed"] = bool(os.environ.get("HEADROOM_PI", "").strip())
     icon = pystray.Icon("Yoyu", make_icon("amber"), "Yoyu", build_menu())
     threading.Thread(target=worker, args=(icon,), daemon=True).start()
     if state.get("swept"):

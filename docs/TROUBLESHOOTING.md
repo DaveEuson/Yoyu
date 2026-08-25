@@ -139,7 +139,49 @@ new one exits to avoid double-polling.
    ```
    python companion.py --pi http://<board-ip>:8080
    ```
-   Get the IP from your router's device list.
+   Get the IP from your router's device list. Several boards go in as one
+   comma-separated list, no spaces.
+
+**If it used to work and stopped**, the saved address has probably gone stale
+— a board that moved to a new IP, or a config written before the rename. From
+v1.7.0 the companion notices that nothing it has saved answers any more and
+looks again by itself; before that it would keep pushing to the old address
+forever. `--rescan` forces it.
+
+---
+
+## You have two boards and only one of them updates
+
+Expected on anything before v1.7.0, and fixed in it. The companion used to
+stop at the **first** board that answered, so the second was never fed — it
+just sat there saying *"waiting for your computer."*
+
+Update the companion, then tell it to look again:
+
+```
+python companion.py --rescan
+```
+
+From the tray, use **Look for boards**. Nothing rescans on its own once a
+saved board answers, which is right until the day you plug in a second one.
+
+Both boards are then kept in the config and fed from a single read of your
+usage — the numbers are the same whoever displays them, and polling once per
+board would only multiply the rate limiting.
+
+**Two other things change with two boards on one network:**
+
+- **`yoyu.local` only ever names one of them.** The boards notice the
+  collision and the second one to start up comes up as `yoyu-2.local`
+  instead, so both are reachable — but which is which is decided by boot
+  order and swaps when they restart together. Address a specific board by
+  its IP, or by the id printed at the bottom of the page it serves at its
+  own address.
+- **Pairing is per board.** Each holds its own top-up key, so pairing one
+  does nothing for the other. With two boards the tray gives each its own
+  submenu, with **Pair this board** inside it. If a board says its key was
+  refused, pair it again — that message means the key belonged to the other
+  board, or the board was disconnected and issued a new one.
 
 ---
 

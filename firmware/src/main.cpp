@@ -350,7 +350,7 @@ static_assert(sizeof(AP_PSK) - 1 >= 8,
               "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
               "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
-static const char *FW_VERSION = "1.6.5";
+static const char *FW_VERSION = "1.7.0";
 
 // Phase 2 — self-contained: poll Anthropic's usage endpoint directly, using an
 // OAuth login pasted once via /connect. Same contract the companion uses.
@@ -358,7 +358,7 @@ static const char *CLIENT_ID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 static const char *REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 static const char *USAGE_URL   = "https://api.anthropic.com/api/oauth/usage";
 static const char *OAUTH_BETA  = "oauth-2025-04-20";
-static const char *UA          = "Yoyu/1.6.5";
+static const char *UA          = "Yoyu/1.7.0";
 // OTA self-update (over-the-air from the GitHub release)
 static const char *RELEASES_API =
     "https://api.github.com/repos/DaveEuson/Yoyu/releases/latest";
@@ -1718,10 +1718,30 @@ static String adminTokenField() {
            "<input name=token type=password placeholder='required to save'>");
 }
 
+// A name for this particular board that survives a reboot.
+//
+// Two of these on one network is now an ordinary situation rather than an edge
+// case, and everything that has to tell them apart -- the companion's per-board
+// top-up keys, the list of boards it feeds, the tray menu -- needs an identity
+// that stays put. mDNS does not provide one. ESP-IDF resolves the yoyu.local
+// collision by itself, renaming whichever board finished probing second to
+// yoyu-2.local, so both are reachable by name; but that name is assigned in
+// boot order and the two swap when they restart together. The MAC does not.
+static const char *deviceId() {
+  static char id[7] = "";
+  if (!id[0]) {
+    uint8_t m[6];
+    WiFi.macAddress(m);            // set once Wi-Fi is up, which it is by here
+    snprintf(id, sizeof(id), "%02x%02x%02x", m[3], m[4], m[5]);
+  }
+  return id;
+}
+
 static void handleStatus() {
   JsonDocument doc;
   doc["app"] = "Yoyu";        // discovery marker the companion looks for
   doc["mini"] = true;
+  doc["id"] = deviceId();     // stable across reboots; "board" is only a model
   // What this board is actually running. The release checklist asks you to
   // confirm an OTA "reboots on the new version", and without this that can only
   // be done by eye or by scraping /update — neither of which works for a board
@@ -3233,6 +3253,13 @@ static void handleRoot() {
   s += ":";
   s += API_PORT;
   s += F(" &middot; yoyu.local:8080</p>"
+         "<p class=muted style='text-align:center;font-size:.78rem;margin:0'>"
+         "this board is <b>");
+  s += deviceId();
+  s += F("</b> &middot; ");
+  s += BOARD_SLUG;
+  s += F(" &middot; if you run two, yoyu.local reaches whichever booted first"
+         "</p>"
          "<p class=muted style='text-align:center;font-size:.78rem;margin:2px 0 8px'>"
          "Made by Dave Euson with <span style='color:#d97757'>&hearts;</span> "
          "in San Diego &middot; &copy; 2026 Dave Euson</p>"
@@ -3338,12 +3365,22 @@ static void dispatchGesture(uint8_t g);   // defined with the touch UI below
 // engine at all. Everything the UI reacts to -- tap, long press, the four
 // swipes -- is worked out here from where a finger landed and left.
 static const uint16_t CST_REG_TOUCH = 0xD000;
-static const uint16_t CST_REG_CMD   = 0xD101;
+// 0xD101 is DEBUG mode, not a generic "command mode". The distinction is the
+// whole ballgame: the info registers are only readable from it, and a chip
+// left sitting in it answers every touch read with a frozen idle frame and
+// never raises its interrupt. Normal reporting has to be asked for by name.
+static const uint16_t CST_REG_DEBUG  = 0xD101;
+static const uint16_t CST_REG_NORMAL = 0xD109;
+static const uint16_t CST_REG_MODE_RB = 0x0002;   // echoes the mode just set
 static const uint16_t CST_REG_CHECK = 0xD1FC;
 static const uint16_t CST_REG_RES   = 0xD1F8;
 static const uint16_t CST_REG_INFO  = 0xD204;
 static const uint8_t  CST_ACK       = 0xAB;   // written back to release a report
-static const uint8_t  CST_DATA_LEN  = 30;     // 5 points x 5 bytes + 5 header
+// 2 points, not 5. ESPHome assumes five fingers and reads 30 bytes; the
+// vendor's own driver declares MAX_FINGER_NUM as 2 and reads 15. Asking for
+// more than the chip has to give can spoil the transaction, and this panel
+// is not a five-finger surface anyway.
+static const uint8_t  CST_DATA_LEN  = 15;     // 2 points x 5 bytes + 5 header
 
 // Wake it and confirm it is the part we think it is. Without the command-mode
 // write the chip acknowledges its address and returns nothing but zeroes
@@ -3355,7 +3392,7 @@ static bool cstBegin() {
   // raising its interrupt line. Whatever the handshake is, it completes by
   // going through the whole sequence.
   uint8_t buf[4];
-  if (!i2cWrite16(TOUCH_ADDR, CST_REG_CMD, buf, 0)) return false;
+  if (!i2cWrite16(TOUCH_ADDR, CST_REG_DEBUG, buf, 0)) return false;
   delay(5);
   if (!i2cRead16(TOUCH_ADDR, CST_REG_CHECK, buf, 4)) return false;
   uint32_t check = (uint32_t)buf[3] << 24 | (uint32_t)buf[2] << 16 |
@@ -3369,6 +3406,17 @@ static bool cstBegin() {
   // noise: it should come back as the panel's own size.
   Serial.printf("[touch] checkcode %08lX  id 0x%04X  reports %dx%d\n",
                 (unsigned long)check, id, rw, rh);
+
+  // Leave debug mode. Everything above was read from it; nothing below works
+  // until the chip is put back to reporting touches.
+  if (!i2cWrite16(TOUCH_ADDR, CST_REG_NORMAL, buf, 0)) return false;
+  delay(10);
+  // The chip echoes the mode it settled into, so this is checkable rather than
+  // hopeful: the low byte should come back as the one just written.
+  if (i2cRead16(TOUCH_ADDR, CST_REG_MODE_RB, buf, 2)) {
+    Serial.printf("[touch] work mode -> 0x%02X (wanted 0x%02X)\n",
+                  buf[1], (uint8_t)(CST_REG_NORMAL & 0xFF));
+  }
   return true;
 }
 
@@ -3400,8 +3448,13 @@ static void pollTouchCst9220() {
   // Log anything that isn't a quiet screen, so a report that arrives but is
   // rejected can be told from no report at all.
   static uint8_t prevRaw[8];
-  if (memcmp(b, prevRaw, 8)) {
+  static unsigned long lastRaw = 0;
+  // Periodically as well as on change. prevRaw starts as zeroes, so an
+  // all-zero frame is silently equal to it and prints nothing -- which reads
+  // exactly like a read that failed.
+  if (memcmp(b, prevRaw, 8) || millis() - lastRaw > 2000) {
     memcpy(prevRaw, b, 8);
+    lastRaw = millis();
     Serial.printf("[touch] raw %02X %02X %02X %02X %02X %02X %02X  "
                   "valid=%d fingers=%d x=%d y=%d\n",
                   b[0], b[1], b[2], b[3], b[4], b[5], b[6],
@@ -3712,8 +3765,14 @@ static void startApi() {
                          "X-Topup-Key"};
   server->collectHeaders(watch, 4);
   server->begin();
+  // Left as "yoyu" deliberately. A second board does not break this: ESP-IDF
+  // probes the name, finds it taken and comes up as yoyu-2 instead, so
+  // yoyu.local keeps meaning a board for everyone who owns one and every doc
+  // that prints it stays true.
   MDNS.begin("yoyu");
   MDNS.addService("http", "tcp", API_PORT);
+  MDNS.addServiceTxt("http", "tcp", "id", deviceId());
+  MDNS.addServiceTxt("http", "tcp", "board", BOARD_SLUG);
 }
 
 void setup() {

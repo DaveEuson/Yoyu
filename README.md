@@ -4,9 +4,10 @@
 much you have left in each window, when it resets, and a phone alert when you're
 running low. No terminal, no menubar, no estimating.
 
-Built on a **~$26 [Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)** —
-one board with the screen, touch, battery header, and USB-C all on it. No
-Raspberry Pi, no Linux, no soldering.
+Built on one **~$26 [Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)** —
+screen, touch, battery header and USB-C all on it. No Raspberry Pi, no Linux,
+no soldering. A second, larger board is supported too — see
+[Buy the hardware](#buy-the-hardware).
 
 <p align="center">
   <img src="docs/img/meters.jpg"  width="30%" alt="Meters — every usage window with a bar and a reset countdown">
@@ -35,26 +36,26 @@ If `claude` runs on your machine and you're signed in, you're good.
 
 ## Buy the hardware
 
-Everything runs on the one ~$26 board — no Raspberry Pi, no soldering.
+Two boards work. Both flash from the browser — the setup page asks which one
+you have before it writes anything, because the image and the panel have to
+match.
 
-- **Waveshare ESP32-S3-Touch-LCD-2:**
-  [on Amazon](https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20) ·
-  [direct from Waveshare](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)
+**[Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)** —
+2", 240×320, about $26. The reference board: every screen is drawn against this
+panel first, and touch works.
+[on Amazon](https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20) ·
+[direct from Waveshare](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)
 
-**In progress: a bigger screen.** Support for the
-[Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)
-(2.16", 480×480 AMOLED) is being brought up in the open. It boots, joins Wi-Fi,
-shows every screen and reads your usage — but:
+**[Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)** —
+2.16", 480×480, square. Brighter, and true black rather than backlit, so it
+starts on the dimmer theme and draws the same layout bigger rather than fitting
+more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 
-> **Touch does not work on it.** The screen is a display, not a control. You can
-> still change screens by leaving auto-rotate on, and everything else is
-> configured from a browser, but you cannot tap it. The panel's controller
-> initialises and reports its own resolution, then never reports a press; that
-> is unsolved, not merely unwritten.
-
-**Don't buy one for this yet.** The flasher above still offers only the 2" LCD
-board, so the AMOLED has to be built and flashed from source. This page will say
-when that changes.
+> **Touch does not work on it yet.** The screen is a display, not a control.
+> Screens rotate on their own and everything else is configured from a browser,
+> but you cannot tap it. The panel's controller initialises, reports its own
+> resolution and accepts a switch into normal reporting mode, then never
+> reports a press; that is unsolved, not merely unwritten.
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
 
@@ -63,13 +64,30 @@ when that changes.
 No tools, no command line:
 
 1. **Flash it in your browser.** Open **https://daveeuson.github.io/Yoyu/**
-   in Chrome or Edge, plug the board in over USB-C, and click
-   **Connect & Install**.
+   in Chrome or Edge, pick which board you have, plug it in over USB-C, and
+   click **Connect & Install**.
 2. **Set Wi-Fi in the same window** — it hands the board your network over the
    same USB cable (Improv). No hotspot, no typing an address.
 3. **See your usage.** Download the companion app from that page and open it —
    it finds the board on your network and feeds it your real usage. Or make the
    board self-contained (below).
+
+## Running two
+
+Both boards on one network is a supported setup, not a workaround. The
+companion finds every board and feeds them all from a single read of your
+usage, and the tray gives each one its own submenu.
+
+Two things are per board rather than shared: **pairing** (each holds its own
+top-up key, so pair each one you want to run without this computer) and
+**`yoyu.local`**, which only ever names one of them — the second board to
+start comes up as `yoyu-2.local`, and that assignment swaps when they reboot
+together. Each board prints its own permanent id at the bottom of the
+page it serves at its own address.
+
+If you add a second board later, run `--rescan` or use the tray's **Look for
+boards** — nothing goes looking again on its own while a saved board is still
+answering.
 
 ## How it gets your usage
 
@@ -91,10 +109,14 @@ No tools, no command line:
 - **Meters** for every usage window Claude reports (5-hour session, weekly,
   weekly Opus…), fuel-gauge style — amber under 30% left, red under 10%.
 - **Reset countdowns** and a clock.
-- **Three screens**, cycled by a tap: all meters → one big focus meter → a
-  usage-history graph (kept in flash across reboots).
+- **Eight screens**, cycled by a tap or on a timer: meters, focus, history,
+  the kitsune, a timer, actions, projects and settings — each one can be
+  switched off if you don't want it in the rotation.
+- **Six themes** — Night, Dim, Paper, Mono, Nord and Tokyo Night, set from the
+  board's own settings page.
 - **Touch & motion** — tap to cycle screens, long-press to flip % left / %
   used, swipe for brightness; flip it face-down to sleep, shake to wake.
+  (2" LCD board only — touch is not working on the AMOLED yet.)
 - **Battery gauge** from the LiPo header.
 - **Phone alerts** via ntfy or Pushover when a window crosses a threshold, with
   a recovery notice.

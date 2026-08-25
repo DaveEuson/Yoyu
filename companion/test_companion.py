@@ -9,8 +9,10 @@ hardware, which CI can't exercise.
 Run: python -m unittest discover -s companion
 """
 
+import contextlib
 import hashlib
 import hmac
+import io
 import json
 import os
 import shutil
@@ -290,10 +292,6 @@ class _FakeProc:
     returncode = 0
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class StaleAutostartSweepTests(unittest.TestCase):
     """The sweep runs unprompted against somebody else's Startup folder, so the
     thing worth testing is what it refuses to delete."""
@@ -312,8 +310,9 @@ class StaleAutostartSweepTests(unittest.TestCase):
             fh.write(body)
         return p
 
-    BAT = ('@echo off\nstart "" "C:\python\pythonw.exe" '
-           '"H:\Projects\ClaudeTrackerPi\companion\companion.py"\n')
+    BAT = ('@echo off\n'
+           r'start "" "C:\python\pythonw.exe" '
+           r'"H:\Projects\ClaudeTrackerPi\companion\companion.py"' '\n')
 
     def test_removes_every_older_name(self):
         stale = [self._write(n, self.BAT)
@@ -334,7 +333,7 @@ class StaleAutostartSweepTests(unittest.TestCase):
         # Deleting an unrelated file out of Startup because it shares a name
         # would be far worse than the bug this fixes.
         other = self._write(companion._WIN_AUTOSTART_NAMES[1],
-                            '@echo off\nstart "" "C:\Games\launcher.exe"\n')
+                            '@echo off\n' r'start "" "C:\Games\launcher.exe"' '\n')
         self.assertEqual(companion.sweep_stale_autostart(self.dir), [])
         self.assertTrue(os.path.exists(other))
 
@@ -424,3 +423,167 @@ class LoginStateTests(unittest.TestCase):
         text = "\n".join(companion.login_help("signed_out")).lower()
         self.assertIn("same claude account", text)
         self.assertIn("rotate", text)
+
+
+class _QuietTest(unittest.TestCase):
+    """Silences the functions under test. Several of them report what they did
+    to stdout, which is right in the companion and noise in a test run."""
+
+    def setUp(self):
+        buf = io.StringIO()
+        ctx = contextlib.redirect_stdout(buf)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
+        self.out = buf
+
+
+class TopupKeyLookupTests(_QuietTest):
+    """Which board a key belongs to.
+
+    This is the part of two-board support that fails silently: the wrong answer
+    doesn't crash, it just quietly stops topping a board up, and the board says
+    it is waiting for your computer while the computer thinks it is done.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.keys = {}
+        self.ids = {}          # url -> device id
+        self.ips = {}          # url -> address it resolves to
+        self.saved = []
+        companion._ID_CACHE.clear()
+        self.addCleanup(companion._ID_CACHE.clear)
+        self._orig_board_id = companion.board_id
+        for name, repl in (
+                ("_topup_keys", lambda: dict(self.keys)),
+                ("board_id", lambda u, refresh=False: self.ids.get(u.rstrip("/"))),
+                ("_url_ip", lambda u: self.ips.get(u.rstrip("/"))),
+                ("_merge_config", lambda **f: (self.keys.clear(),
+                                               self.keys.update(f["topup_keys"]),
+                                               self.saved.append(f))[0])):
+            orig = getattr(companion, name)
+            setattr(companion, name, repl)
+            self.addCleanup(setattr, companion, name, orig)
+
+    def test_id_wins_over_address(self):
+        self.keys = {"ab12cd": "right", "http://192.168.0.9:8080": "wrong"}
+        self.ids["http://192.168.0.9:8080"] = "ab12cd"
+        self.assertEqual(companion.topup_key_for("http://192.168.0.9:8080"),
+                         "right")
+
+    def test_exact_address_is_used_when_the_board_has_no_id(self):
+        # Firmware older than 1.7.0 has no id to give.
+        self.keys = {"http://192.168.0.9:8080": "k"}
+        self.assertEqual(companion.topup_key_for("http://192.168.0.9:8080"), "k")
+
+    def test_a_key_paired_against_a_hostname_still_matches_the_board(self):
+        # The real case: paired via yoyu.local, later addressed by the IP
+        # discovery found. Same board, two spellings.
+        self.keys = {"http://yoyu.local:8080": "k"}
+        self.ips = {"http://yoyu.local:8080": "192.168.0.77",
+                    "http://192.168.0.77:8080": "192.168.0.77"}
+        self.assertEqual(companion.topup_key_for("http://192.168.0.77:8080"), "k")
+
+    def test_the_other_board_does_not_borrow_that_key(self):
+        # The bug this whole change exists to prevent.
+        self.keys = {"http://yoyu.local:8080": "k"}
+        self.ips = {"http://yoyu.local:8080": "192.168.0.77",
+                    "http://192.168.0.76:8080": "192.168.0.76"}
+        self.assertIsNone(companion.topup_key_for("http://192.168.0.76:8080"))
+
+    def test_an_unreachable_board_is_asked_again_next_time(self):
+        """Found on hardware: a board probed mid-reboot answered nothing, and
+        the absence was cached, so it stayed id-less for the whole run."""
+        calls = []
+        replies = [None, {"id": "ab12cd"}]     # rebooting, then up
+
+        def fake_probe(u, timeout=0.8):
+            calls.append(u)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        orig_probe = companion._probe_info
+        orig_bid = self._orig_board_id
+        companion._probe_info = fake_probe
+        companion.board_id = orig_bid          # the real one, not the stub
+        self.addCleanup(setattr, companion, "_probe_info", orig_probe)
+        companion._ID_CACHE.clear()
+
+        self.assertIsNone(companion.board_id("http://b:8080"))
+        self.assertEqual(companion.board_id("http://b:8080"), "ab12cd")
+        self.assertEqual(len(calls), 2, "a missing id must not be cached")
+
+    def test_migration_refiles_under_the_id(self):
+        self.keys = {"http://yoyu.local:8080": "k"}
+        self.ids["http://yoyu.local:8080"] = "ab12cd"
+        moved = companion.migrate_topup_keys()
+        self.assertEqual(moved, {"ab12cd": "k"})
+        self.assertEqual(self.keys, {"ab12cd": "k"})
+
+    def test_migration_keeps_a_key_whose_board_is_switched_off(self):
+        # board_id() returns None for an unreachable board. Dropping the key
+        # would force a re-pair for nothing more than being powered down.
+        self.keys = {"http://yoyu.local:8080": "k"}
+        self.assertEqual(companion.migrate_topup_keys(), {})
+        self.assertEqual(self.keys, {"http://yoyu.local:8080": "k"})
+
+    def test_already_migrated_keys_are_left_alone(self):
+        self.keys = {"ab12cd": "k"}
+        self.assertEqual(companion.migrate_topup_keys(), {})
+        self.assertEqual(self.keys, {"ab12cd": "k"})
+        self.assertEqual(self.saved, [])       # and nothing rewritten
+
+
+class ResolveTargetsTests(_QuietTest):
+    """A saved address that stopped answering used to be a permanent trap: it
+    was truthy, so discovery never ran again and every push went nowhere."""
+
+    def setUp(self):
+        super().setUp()
+        self.alive = set()
+        self.found = []
+        self.saved = []
+        for name, repl in (
+                ("_probe", lambda u: u.rstrip("/") in self.alive),
+                ("discover_all", lambda *a, **k: list(self.found)),
+                ("save_pi", lambda u: self.saved.append(u))):
+            orig = getattr(companion, name)
+            setattr(companion, name, repl)
+            self.addCleanup(setattr, companion, name, orig)
+
+    def test_a_reachable_saved_board_is_kept_without_scanning(self):
+        self.alive = {"http://192.168.0.76:8080"}
+        self.found = [{"url": "http://192.168.0.99:8080", "id": "z",
+                       "board": "lcd2", "version": "1.7.0"}]
+        out = companion.resolve_targets("http://192.168.0.76:8080")
+        self.assertEqual(out, "http://192.168.0.76:8080")
+        self.assertEqual(self.saved, [])       # no scan, no rewrite
+
+    def test_a_stale_saved_address_triggers_a_fresh_look(self):
+        self.found = [{"url": "http://192.168.0.76:8080", "id": "a",
+                       "board": "lcd2", "version": "1.7.0"},
+                      {"url": "http://192.168.0.77:8080", "id": "b",
+                       "board": "amoled216", "version": "1.7.0"}]
+        out = companion.resolve_targets("http://headroom.local:8080")
+        self.assertEqual(out, "http://192.168.0.76:8080,"
+                              "http://192.168.0.77:8080")
+        self.assertEqual(self.saved, [out])
+
+    def test_rescan_looks_again_even_when_the_saved_board_answers(self):
+        self.alive = {"http://192.168.0.76:8080"}
+        self.found = [{"url": "http://192.168.0.76:8080", "id": "a",
+                       "board": "lcd2", "version": "1.7.0"},
+                      {"url": "http://192.168.0.77:8080", "id": "b",
+                       "board": "amoled216", "version": "1.7.0"}]
+        out = companion.resolve_targets("http://192.168.0.76:8080", rescan=True)
+        self.assertIn("192.168.0.77", out)
+
+    def test_finding_nothing_keeps_what_was_saved(self):
+        # Everything off, or the laptop is on a different network. Forgetting
+        # the boards here would mean re-pairing them for a temporary outage.
+        out = companion.resolve_targets("http://192.168.0.76:8080")
+        self.assertEqual(out, "http://192.168.0.76:8080")
+        self.assertEqual(self.saved, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

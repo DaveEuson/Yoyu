@@ -32,19 +32,29 @@
     --acc:#d97757; --acc-deep:#ba5532; --acc-text:#a8442a;
     --acc-ink:#fff;
     --err:#b4442a;
+    /* The one authored motion curve on the page: exponential ease-out, so a
+       step arrives fast and settles rather than gliding in linearly. */
+    --out:cubic-bezier(.16,1,.3,1);
   }
   *{box-sizing:border-box}
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
     background:var(--bg);color:var(--ink);margin:0;line-height:1.5;
     padding:32px 18px 64px}
   main{max-width:640px;margin:0 auto}
-  header{text-align:center;margin-bottom:28px}
-  h1{font-size:2rem;margin:.2rem 0}
+  header{text-align:center;margin-bottom:20px}
+  h1{font-size:2rem;margin:.2rem 0;letter-spacing:-.02em}
   /* The kana sit beside the name, not under it: they are the same word,
      not a translation of it. Smaller and muted so the lockup still reads
      as one mark to someone who cannot read them. */
   h1 .jp{font-size:.62em;color:var(--muted);font-weight:400;margin-left:.34em;letter-spacing:.04em}
   .tag{color:var(--muted);font-size:1.02rem;margin:.2rem 0}
+  /* Underway: the mark shrinks, the tagline and the browser warning go. The
+     warning is a precondition of the flash step specifically -- past it, it is
+     an instruction you can no longer act on, which is worse than silence. */
+  body.wiz.started header{margin-bottom:14px}
+  body.wiz.started header svg{width:50px;height:36px;margin-bottom:2px}
+  body.wiz.started h1{font-size:1.45rem}
+  body.wiz.started .tag,body.wiz.started>main>.note{display:none}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;
     padding:22px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(61,57,41,.05)}
   .step{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
@@ -52,12 +62,126 @@
   .num{flex:0 0 28px;height:28px;line-height:28px;text-align:center;
     background:var(--acc-deep);color:var(--acc-ink);border-radius:50%;
     font-weight:700;font-size:.95rem}
-  h2{font-size:1.2rem;margin:0}
+  h2{font-size:1.2rem;margin:0;letter-spacing:-.01em}
+  h2:focus{outline:none}
+  h3{font-size:1.02rem;margin:0 0 2px;letter-spacing:-.01em}
   p{margin:.5rem 0}
   .muted{color:var(--muted)}
   code{background:rgba(61,57,41,.07);padding:2px 6px;border-radius:6px;
     font-size:.92em}
   .center{text-align:center}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);
+    clip-path:inset(50%);white-space:nowrap}
+
+  /* ---- The wizard shell -------------------------------------------------
+     Every step is in the document and visible by default. JS adds .wiz to
+     <body> and only then does one-at-a-time behaviour switch on, so a browser
+     that never runs the script gets the whole page as one scroll — the same
+     page this replaced — rather than a single dead step and no way forward. */
+  .rail{display:none}
+  body.wiz .rail{display:block;position:relative;margin:0 0 22px}
+  .rail ol{display:flex;list-style:none;margin:0;padding:0}
+  .rail li{flex:1 1 0;min-width:0}
+  .rail button{font-family:inherit;font:inherit;background:none;border:0;
+    padding:4px 0 7px;width:100%;display:flex;flex-direction:column;
+    align-items:center;gap:7px;color:var(--muted);font-size:.72rem;
+    cursor:default;line-height:1.25}
+  .rail button[data-nav]{cursor:pointer}
+  .rail .pip{width:15px;height:15px;border-radius:50%;background:var(--card);
+    border:2px solid var(--line);display:grid;place-items:center;
+    transition:background .3s var(--out),border-color .3s var(--out),
+      transform .3s var(--out)}
+  .rail .pip svg{width:9px;height:9px;opacity:0;transform:scale(.5);
+    transition:opacity .25s var(--out),transform .25s var(--out)}
+  .rail .done .pip{background:var(--acc-deep);border-color:var(--acc-deep)}
+  .rail .done .pip svg{opacity:1;transform:none}
+  .rail .now .pip{border-color:var(--acc-deep);background:var(--card);
+    transform:scale(1.25);box-shadow:inset 0 0 0 3px var(--acc-deep)}
+  .rail .now{color:var(--ink);font-weight:600}
+  .rail .done{color:var(--acc-text)}
+  /* Inset to 10% each side, which is exactly the first and last pip centre
+     for five equal columns, so the line starts and stops on the pips instead
+     of running off the ends. It sits before the pips in the DOM, so they paint
+     over it and no negative z-index is needed. */
+  .rail .track{position:absolute;top:10.5px;left:10%;right:10%;height:2px;
+    background:var(--line);border-radius:2px}
+  /* scaleX rather than an animated width: the fill redraws on every frame of
+     every step change, and scaling a fixed-size box keeps that off the layout
+     path entirely. The fraction is set inline by the script. */
+  .rail .track i{position:absolute;inset:0;transform-origin:left center;
+    transform:scaleX(0);background:var(--acc-deep);border-radius:2px;
+    transition:transform .45s var(--out)}
+  body.wiz .stepcard{display:none}
+  body.wiz .stepcard.on{display:block}
+  /* The authored moment. A step doesn't slide in from off-screen; it lifts the
+     last few pixels and resolves, which reads as the page settling rather than
+     as a carousel. */
+  @keyframes settle{from{opacity:0;transform:translateY(10px);filter:blur(3px)}
+    to{opacity:1;transform:none;filter:none}}
+  body.wiz .stepcard.on{animation:settle .38s var(--out) both}
+  /* Step footers only mean anything when one step is on screen at a time. */
+  .go{display:none}
+  body.wiz .go{display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+    margin:20px -20px -22px;padding:16px 20px;border-top:1px solid var(--line);
+    background:rgba(61,57,41,.025);border-radius:0 0 15px 15px}
+  .go .spacer{flex:1 1 auto}
+  .btn{font-family:inherit;font-size:.95rem;font-weight:600;line-height:1;
+    padding:13px 20px;min-height:44px;border-radius:10px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+    border:1px solid var(--line);background:var(--raised);color:var(--ink);
+    transition:border-color .15s ease-out,filter .15s ease-out}
+  .btn:hover{border-color:var(--acc)}
+  .btn-go{background:var(--acc-deep);color:var(--acc-ink);border-color:transparent;
+    box-shadow:0 2px 8px rgba(122,52,26,.28)}
+  .btn-go:hover{filter:brightness(1.08);border-color:transparent}
+  .btn-go:focus-visible{outline-color:var(--ink)}
+  .btn svg{width:14px;height:14px;flex:0 0 auto}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;box-shadow:none}
+  .btn[disabled]:hover{filter:none;border-color:var(--line)}
+
+  /* ---- Board picker -----------------------------------------------------
+     Two real panels drawn to true relative scale, because size and shape are
+     exactly what the buyer is choosing between and a photo of one board next
+     to no photo of the other would decide it for them. Each preview also
+     carries that board's own default theme, so the choice previews itself. */
+  .pick{display:grid;grid-template-columns:1fr;gap:12px;margin:14px 0 4px}
+  @media (min-width:540px){.pick{grid-template-columns:1fr 1fr}}
+  .opt{display:flex;flex-direction:column}
+  .optbtn{font-family:inherit;font-size:1rem;color:inherit;text-align:left;
+    background:var(--raised);border:1px solid var(--line);border-radius:14px;
+    padding:16px 16px 14px;cursor:pointer;position:relative;flex:1 1 auto;
+    display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    transition:border-color .2s var(--out),box-shadow .2s var(--out),
+      transform .2s var(--out)}
+  .optbtn:hover{border-color:var(--acc)}
+  .optbtn:active{transform:translateY(1px)}
+  .opt.sel .optbtn{border-color:var(--acc-deep);
+    box-shadow:0 0 0 1px var(--acc-deep),0 3px 12px rgba(122,52,26,.14)}
+  .optbtn .panel{display:block;width:118px;height:110px;margin:2px auto 12px}
+  .flag{position:absolute;top:12px;right:12px;font-size:.66rem;font-weight:700;
+    letter-spacing:.03em;text-transform:uppercase;color:var(--acc-text);
+    background:var(--tint);border-radius:99px;padding:4px 9px}
+  .spec{color:var(--muted);font-size:.85rem;margin:0 0 8px}
+  .why{font-size:.9rem;margin:0}
+  .warn{display:flex;gap:7px;align-items:flex-start;font-size:.85rem;
+    margin:10px 0 0;color:var(--acc-text)}
+  .warn svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
+  .warn.ok{color:var(--muted)}
+  .warn.ok strong{color:var(--ink)}
+  .links{font-size:.85rem;color:var(--muted);margin:8px 2px 0;text-align:center}
+  .disclose{color:var(--muted);font-size:.76rem;text-align:center;margin:10px 0 0}
+  /* Once chosen, the choice stays legible at the top of every later step —
+     a wizard that hides the decision it made for you is how people end up
+     flashing the wrong image. */
+  .chosen{display:none}
+  body.wiz[data-board] .chosen{display:flex;align-items:center;gap:8px;
+    font-size:.85rem;color:var(--muted);margin:0 0 14px;padding:0 0 12px;
+    border-bottom:1px solid var(--line)}
+  .chosen b{color:var(--ink);font-weight:600}
+  .chosen button{font:inherit;font-size:.85rem;background:none;border:0;
+    color:var(--acc-text);text-decoration:underline;cursor:pointer;
+    padding:4px 2px;margin-left:auto}
+
   /* The library only ever reads these three names, and only for its own
      fallback button inside the shadow root — the one below replaces it. */
   esp-web-install-button{display:block;--esp-tools-button-color:var(--acc-deep);
@@ -106,8 +230,6 @@
   .aside{background:transparent;border:1px solid var(--line);border-radius:10px;
     padding:10px 14px;font-size:.93rem;margin:12px 0;color:var(--muted)}
   .aside strong{color:var(--ink)}
-  /* FTC disclosure sits with the link it discloses, not four screens below. */
-  .buy small{display:block;margin-top:4px}
   .unsupported{color:var(--err);font-weight:600}
   /* 24px tall was under any usable thumb target; padding takes it to 44.
      Not display:flex — that would drop the disclosure triangle. */
@@ -152,6 +274,7 @@
      UA default on three of seventeen. */
   :focus-visible{outline:3px solid var(--acc-text);outline-offset:3px;
     border-radius:4px}
+  ::selection{background:var(--tint);color:var(--ink)}
   /* Portrait 1054x1400, so cap it — at full card width it would be 790px tall
      and read as a hero instead of a payoff. width/height attrs on the tag
      reserve the ratio, so lazy-loading it can't shift the layout. */
@@ -159,12 +282,21 @@
     border:1px solid var(--line);margin:18px auto 6px}
   .caption{color:var(--muted);font-size:.85rem;text-align:center;margin:0}
   .heart{color:var(--acc-text)}
+  /* Board-conditional copy. Touch is dead on the AMOLED, so anything that
+     tells you to tap the screen has to disappear when that board is chosen —
+     advice that can't be followed is worse than no advice. */
+  body[data-board="amoled"] .lcd-only{display:none}
+  body:not([data-board="amoled"]) .amoled-only{display:none}
+  .caption .amoled-only{display:inline}
+  body:not([data-board="amoled"]) .caption .amoled-only{display:none}
   /* Keep the state change, drop the movement — not a blanket 0.01ms kill, which
      would strip feedback that's doing real work. */
   @media (prefers-reduced-motion:reduce){
     esp-web-install-button button[slot="activate"],.dl,.handoff button,
-    .handoff a{transition:none}
-    esp-web-install-button button[slot="activate"]:active{transform:none}}
+    .handoff a,.optbtn,.btn,.rail .pip,.rail .track i{transition:none}
+    esp-web-install-button button[slot="activate"]:active{transform:none}
+    .optbtn:active{transform:none}
+    body.wiz .stepcard.on{animation:none}}
 </style>
 </head>
 <body>
@@ -176,23 +308,99 @@
       point. Your Claude usage, on your desk. Let's get it running.</p>
   </header>
 
-  <div class="buy center">
-    Don't have the board yet? It runs on one ~$26
-    <strong>Waveshare ESP32-S3-Touch-LCD-2</strong> —
-    <a class="nb" rel="sponsored" href="https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20">on Amazon</a>
-    or <a class="nb" href="https://www.waveshare.com/esp32-s3-touch-lcd-2.htm">direct from Waveshare</a>.
-    <small class="muted">The Amazon link is an affiliate link — I earn a
-      commission on qualifying purchases.</small>
-  </div>
-
   <div class="note center">
     Setup runs best in <strong>Chrome</strong> or <strong>Edge</strong> on a
     <strong>computer</strong> (the browser flasher needs USB access). Phones and
     Safari/Firefox can't flash — but you'll only do this once.
   </div>
 
-  <div class="card">
-    <div class="step"><span class="num">1</span><h2>Flash the board</h2></div>
+  <nav class="rail" aria-label="Setup progress">
+    <div class="track"><i id="railfill"></i></div>
+    <ol id="rail">
+      <li><button type="button" data-to="1"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Board</button></li>
+      <li><button type="button" data-to="2"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Flash</button></li>
+      <li><button type="button" data-to="3"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Wi-Fi</button></li>
+      <li><button type="button" data-to="4"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Usage</button></li>
+      <li><button type="button" data-to="5"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Done</button></li>
+    </ol>
+  </nav>
+  <p class="sr" aria-live="polite" id="say"></p>
+
+  <!-- Step 1 — the choice that has to happen before anything is written to
+       flash, because the image and the panel have to match. -->
+  <section class="card stepcard" data-step="1">
+    <div class="step"><span class="num">1</span><h2 tabindex="-1">Pick your board</h2></div>
+    <p>Yoyu runs on one small Waveshare dev board — no Raspberry Pi, no
+      soldering. Two work. They flash differently, so choose first.</p>
+    <noscript><p class="unsupported">Choosing a board needs JavaScript — and
+      so does the browser flasher itself. See the
+      <a href="https://github.com/DaveEuson/Yoyu/blob/main/docs/TROUBLESHOOTING.md">troubleshooting
+      guide</a> for the other ways to install.</p></noscript>
+    <div class="pick">
+      <div class="opt" id="opt-lcd">
+        <button type="button" class="optbtn" data-board="lcd" aria-pressed="false">
+          <span class="flag">Most people</span>
+          <svg class="panel" width="84" height="78" viewBox="0 0 84 78" aria-hidden="true">
+            <rect x="15.5" y="4" width="53" height="70" rx="4" fill="#17150f"/>
+            <rect x="21" y="12" width="21" height="2.5" rx="1.2" fill="#6b6759"/>
+            <rect x="21" y="18" width="42" height="6" rx="2" fill="#2c2721"/>
+            <rect x="21" y="18" width="30" height="6" rx="2" fill="#d97757"/>
+            <rect x="21" y="31" width="17" height="2.5" rx="1.2" fill="#6b6759"/>
+            <rect x="21" y="37" width="42" height="6" rx="2" fill="#2c2721"/>
+            <rect x="21" y="37" width="19" height="6" rx="2" fill="#d97757"/>
+            <rect x="21" y="50" width="23" height="2.5" rx="1.2" fill="#6b6759"/>
+            <rect x="21" y="56" width="42" height="6" rx="2" fill="#2c2721"/>
+            <rect x="21" y="56" width="35" height="6" rx="2" fill="#d97757"/>
+          </svg>
+          <h3>2&Prime; LCD</h3>
+          <p class="spec">240&times;320 · about $26</p>
+          <p class="why">The reference board — every screen is drawn against
+            this panel first.</p>
+          <span class="warn ok"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.4"/><path d="m5.3 8.2 1.9 1.9 3.5-4"/></svg>
+            <span><strong>Touch works.</strong> Tap to change screens,
+            long-press to flip % left / % used, swipe to dim.</span></span>
+        </button>
+        <p class="links">
+          <a class="nb" rel="sponsored" href="https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20">Amazon</a> ·
+          <a class="nb" href="https://www.waveshare.com/esp32-s3-touch-lcd-2.htm">Waveshare</a>
+        </p>
+      </div>
+      <div class="opt" id="opt-amoled">
+        <button type="button" class="optbtn" data-board="amoled" aria-pressed="false">
+          <span class="flag">New</span>
+          <svg class="panel" width="84" height="78" viewBox="0 0 84 78" aria-hidden="true">
+            <rect x="8.5" y="5.5" width="67" height="67" rx="8" fill="#000"/>
+            <rect x="16" y="16" width="26" height="3" rx="1.5" fill="#4a463d"/>
+            <rect x="16" y="24" width="52" height="8" rx="2.5" fill="#1c1a17"/>
+            <rect x="16" y="24" width="37" height="8" rx="2.5" fill="#8f4e36"/>
+            <rect x="16" y="43" width="21" height="3" rx="1.5" fill="#4a463d"/>
+            <rect x="16" y="51" width="52" height="8" rx="2.5" fill="#1c1a17"/>
+            <rect x="16" y="51" width="23" height="8" rx="2.5" fill="#8f4e36"/>
+          </svg>
+          <h3>2.16&Prime; AMOLED</h3>
+          <p class="spec">480&times;480 · price at Waveshare</p>
+          <p class="why">Square and brighter — true black, so the same layout
+            is drawn bigger rather than denser.</p>
+          <span class="warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.4"/><path d="M8 4.9v3.6"/><path d="M8 11.1h.01"/></svg>
+            <span><strong>Touch doesn't work on this one yet.</strong> It's a
+            display, not a control — screens rotate on their own and everything
+            else is set from a browser.</span></span>
+        </button>
+        <p class="links">
+          <a class="nb" href="https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm">Waveshare</a>
+        </p>
+      </div>
+    </div>
+    <p class="disclose">The Amazon link above is an affiliate link — I earn a
+      commission on qualifying purchases.</p>
+    <p class="muted center" id="pickhint">Pick one to continue — you can
+      change it later.</p>
+  </section>
+
+  <section class="card stepcard" data-step="2">
+    <p class="chosen">Flashing the <b data-boardname>2&Prime; LCD</b>
+      <button type="button" data-to="1">Change board</button></p>
+    <div class="step"><span class="num">2</span><h2 tabindex="-1">Flash the board</h2></div>
     <p>Plug the board into your computer with a <strong>data USB-C cable</strong>
       (a charge-only cable won't work), then:</p>
     <div class="center" id="flash-slot">
@@ -208,11 +416,11 @@
       <div id="no-flash">
         <p>Send yourself the link and open it on a computer running Chrome or
           Edge. That's the only step that needs one — everything after it works
-          from anywhere.</p>
+          from anywhere. Your board choice travels with the link.</p>
         <code id="page-url">https://daveeuson.github.io/Yoyu/</code>
         <div class="handoff">
           <button id="copy-url" type="button">Copy link</button>
-          <a href="mailto:?subject=Yoyu%20Mini%20setup&amp;body=Open%20this%20on%20a%20computer%20in%20Chrome%20or%20Edge%3A%20https%3A%2F%2Fdaveeuson.github.io%2FYoyu%2F">Email it to myself</a>
+          <a id="mail-url" href="mailto:?subject=Yoyu%20setup&amp;body=Open%20this%20on%20a%20computer%20in%20Chrome%20or%20Edge%3A%20https%3A%2F%2Fdaveeuson.github.io%2FYoyu%2F">Email it to myself</a>
         </div>
       </div>
       <p class="muted center" id="port-hint">Pick the board's port when asked,
@@ -235,28 +443,40 @@
         release BOOT, then click Connect again. If there's still no port, try a
         different USB-C cable — most are charge-only.</p>
     </details>
-  </div>
+    <div class="go">
+      <button type="button" class="btn" data-back><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-go" data-next>It's flashed<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
 
-  <div class="card">
-    <div class="step"><span class="num">2</span><h2>Put it on your Wi-Fi</h2></div>
-    <p>Right after it flashes, the same window offers
+  <section class="card stepcard" data-step="3">
+    <div class="step"><span class="num">3</span><h2 tabindex="-1">Put it on your Wi-Fi</h2></div>
+    <p>This happens in the <strong>same window</strong> that just flashed it.
+      When it finishes, that window offers
       <strong>&ldquo;Connect to Wi-Fi.&rdquo;</strong> Click it, pick your
       network, type the password once — it's sent to the board over the USB
       cable you already have plugged in. <strong>No hotspot, no app.</strong></p>
-    <p class="muted">The board reboots and shows its address on screen.</p>
+    <p class="muted">The board reboots and shows its address on screen. Write
+      that address down — it's how you'll change settings later.</p>
     <details>
-      <summary>Already flashed, but the board isn't on Wi-Fi?</summary>
+      <summary>Closed that window, or it never offered Wi-Fi?</summary>
       <p>A flashed board with no network to join puts up its own Wi-Fi instead.
         From a phone or a laptop, join the network named
-        <code>Yoyu-Setup</code> (password <code>headroom</code>), open
+        <code>Yoyu-Setup</code> (password <code>yoyusetup</code>), open
         <code>http://192.168.4.1</code>, and tap your home network from the
-        list. (That network only exists once step 1 is done — a board you
+        list. (That network only exists once step 2 is done — a board you
         haven't flashed yet won't broadcast it.)</p>
     </details>
-  </div>
+    <div class="go">
+      <button type="button" class="btn" data-back><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-go" data-next>It's on Wi-Fi<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
 
-  <div class="card">
-    <div class="step"><span class="num">3</span><h2>Feed it your usage</h2></div>
+  <section class="card stepcard" data-step="4">
+    <div class="step"><span class="num">4</span><h2 tabindex="-1">Feed it your usage</h2></div>
     <p>Run the little companion on the computer where you use Claude Code. It
       reads your existing login and sends usage to the board — no extra sign-in.
       Download it and open it; there's no installer to run:</p>
@@ -283,15 +503,6 @@
       (check with <code>claude /usage</code>); the companion should then print
       <code>[LIVE]</code>, not <code>[estimated]</code>.
     </div>
-    <div class="aside">
-      <strong>Don't want to leave it running?</strong> Make the board
-      self-contained: click the companion's icon in your menubar (macOS) or
-      system tray (Windows/Linux) and choose <strong>Pair board</strong>.
-      <strong>The board shows a short code on its screen — type that into the
-      companion</strong>, and only then does it take your login. From then on the
-      board polls your usage on its own, with no computer involved. (Best with a
-      spare Claude account, so it doesn't rotate your main login's token.)
-    </div>
     <details>
       <summary>It didn't find the board?</summary>
       <p><strong>First, check they're on the same Wi-Fi</strong> — the board and
@@ -300,18 +511,62 @@
       <p>If they are and it still can't find it, the
         <a href="https://github.com/DaveEuson/Yoyu/blob/main/docs/TROUBLESHOOTING.md">troubleshooting
         guide</a> covers pointing the companion straight at the address from
-        step 2. Otherwise just leave the companion running — it sets itself to
+        step 3. Otherwise just leave the companion running — it sets itself to
         start with your computer, so the meters stay fresh.</p>
     </details>
+    <div class="go">
+      <button type="button" class="btn" data-back><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-go" data-next>The meters are live<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
+
+  <!-- Step 5 exists because the metric is a board left powered on a desk, not a
+       board that flashed. This is where the photo finally means something, and
+       where the two things people ask next — how do I change it, how do I stop
+       leaving the companion running — get answered instead of discovered. -->
+  <section class="card stepcard" data-step="5">
+    <div class="step"><span class="num">5</span><h2 tabindex="-1">That's it</h2></div>
     <img class="shot" src="img/meters.jpg" width="1054" height="1400"
       loading="lazy" decoding="async"
       alt="Yoyu on a desk, showing labelled session and weekly usage
            meters with the percentage left in each.">
-    <p class="caption">This is what you're aiming at.</p>
-  </div>
+    <!-- The only photo that exists is of the 2" board. Showing it unlabelled
+         to someone who just flashed the square one is a small lie about what
+         they are about to see. -->
+    <p class="caption">This is what you were aiming at.<span class="amoled-only">
+      Photographed on the 2&Prime; board — yours is the square one.</span></p>
+    <p>Leave it somewhere you'll glance at it. Amber under 30% left, red under
+      10%, and when a window runs out it puts up a countdown to the reset by
+      itself.</p>
+    <p class="lcd-only"><strong>On the board:</strong> tap to change screens,
+      long-press to flip between &ldquo;% left&rdquo; and &ldquo;% used,&rdquo;
+      swipe to change brightness, and lay it face down to sleep.</p>
+    <p class="amoled-only"><strong>On this board:</strong> the screens rotate on
+      their own — touch isn't working on the AMOLED yet, so leave auto-rotate on
+      and use the browser for the rest.</p>
+    <p><strong>Everything else lives in a browser</strong>, at the address the
+      board shows on screen: <code>/settings</code> for screens, theme and
+      clock, <code>/alerts</code> for phone notifications, and
+      <code>/update</code> to take a new version over the air.</p>
+    <div class="aside">
+      <strong>Don't want to leave the companion running?</strong> Make the board
+      self-contained: click the companion's icon in your menubar (macOS) or
+      system tray (Windows/Linux) and choose <strong>Pair board</strong>.
+      <strong>The board shows a short code on its screen — type that into the
+      companion</strong>, and only then does it take your login. From then on the
+      board polls your usage on its own, with no computer involved. (Best with a
+      spare Claude account, so it doesn't rotate your main login's token.)
+    </div>
+    <div class="go">
+      <button type="button" class="btn" data-back><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-restart>Set up another board</button>
+    </div>
+  </section>
 
   <footer>
-    That's it — no VS Code, no PlatformIO, nothing to build.<br>
+    No VS Code, no PlatformIO, nothing to build.<br>
     <a href="https://github.com/DaveEuson/Yoyu/blob/main/docs/TROUBLESHOOTING.md">Having trouble? Troubleshooting guide</a> ·
     <a class="nb" href="https://github.com/DaveEuson/Yoyu">Source &amp; docs on GitHub</a><br>
     Made by Dave Euson with <span class="heart">&hearts;</span> in San Diego<br>
@@ -325,9 +580,6 @@
 <script type="module"
   src="./vendor/esp-web-tools/install-button.js"></script>
 <script>
-  // Copy-link handoff for the browsers that can't flash. Inline and dependency
-  // free, same reason the flasher is self-hosted: nothing external on a page
-  // that handles Wi-Fi credentials.
   // The flasher module is self-hosted, but it can still fail to arrive: a bad
   // deploy, an offline reload, an extension blocking module scripts. Give it a
   // grace period, then swap the placeholder for a real error with a way out.
@@ -336,13 +588,142 @@
     document.getElementById('flash-slot').classList.add('flash-failed');
   }, 8000);
 
+  // ---- The wizard -------------------------------------------------------
+  // Everything below is an upgrade, never a requirement. The markup above is
+  // the whole page in reading order; this turns it into one step at a time.
+  // If it throws or never runs, the reader still gets every step.
+  (function () {
+    var BOARDS = {
+      lcd:    { name: '2″ LCD',    manifest: './firmware/manifest.json' },
+      amoled: { name: '2.16″ AMOLED', manifest: './firmware/manifest-amoled216.json' }
+    };
+    var LAST = 5;
+    var body = document.body;
+    var steps = [].slice.call(document.querySelectorAll('.stepcard'));
+    var rail = document.getElementById('rail');
+    var fill = document.getElementById('railfill');
+    var say = document.getElementById('say');
+    var ewt = document.querySelector('esp-web-install-button');
+    var step = 1, board = null, reached = 1;
+
+    // localStorage throws outright in some privacy modes rather than failing
+    // soft, so every touch of it is guarded. Losing the saved place is a
+    // downgrade; a thrown exception here would take the whole wizard down.
+    function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+    function setBoard(b, remember) {
+      if (!BOARDS[b]) return;
+      board = b;
+      body.setAttribute('data-board', b);
+      if (ewt) ewt.setAttribute('manifest', BOARDS[b].manifest);
+      [].forEach.call(document.querySelectorAll('[data-board]'), function (el) {
+        var on = el.getAttribute('data-board') === b;
+        el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        el.parentNode.classList.toggle('sel', on);
+      });
+      [].forEach.call(document.querySelectorAll('[data-boardname]'), function (el) {
+        el.textContent = BOARDS[b].name;
+      });
+      var hint = document.getElementById('pickhint');
+      if (hint) hint.textContent = BOARDS[b].name + ' it is.';
+      // The handoff link is how a phone visitor gets to a computer. It has to
+      // carry the choice, or they land on step 1 again and pick blind.
+      var u = location.origin + location.pathname + '?board=' + b;
+      var url = document.getElementById('page-url');
+      var mail = document.getElementById('mail-url');
+      if (url) url.textContent = u;
+      if (mail) mail.href = 'mailto:?subject=' + encodeURIComponent('Yoyu setup') +
+        '&body=' + encodeURIComponent('Open this on a computer in Chrome or Edge: ' + u);
+      if (remember) set('yoyu-board', b);
+    }
+
+    function show(n, focus) {
+      n = Math.max(1, Math.min(LAST, n));
+      // Step 1 is the only gate. Everything after it is self-reported, so
+      // there is nothing to enforce and no reason to trap anyone.
+      if (n > 1 && !board) n = 1;
+      step = n;
+      if (n > reached) reached = n;
+      steps.forEach(function (s) {
+        s.classList.toggle('on', +s.getAttribute('data-step') === n);
+      });
+      [].forEach.call(rail.querySelectorAll('button'), function (b2) {
+        var i = +b2.getAttribute('data-to');
+        b2.classList.toggle('done', i < n);
+        b2.classList.toggle('now', i === n);
+        if (i === n) b2.setAttribute('aria-current', 'step');
+        else b2.removeAttribute('aria-current');
+        // Only steps already visited are navigable. A pip you cannot use
+        // should not look like a button or answer the keyboard.
+        if (i <= reached) { b2.setAttribute('data-nav', ''); b2.disabled = false; }
+        else { b2.removeAttribute('data-nav'); b2.disabled = true; }
+      });
+      fill.style.transform = 'scaleX(' + (n - 1) / (LAST - 1) + ')';
+      body.classList.toggle('started', n > 1);
+      set('yoyu-step', String(n));
+      var h = steps[n - 1].querySelector('h2');
+      if (say && h) say.textContent = 'Step ' + n + ' of ' + LAST + ': ' + h.textContent;
+      if (focus && h) h.focus();
+    }
+
+    body.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-board],[data-next],[data-back],[data-to],[data-restart]');
+      if (!t || t.disabled) return;
+      if (t.hasAttribute('data-board')) {
+        setBoard(t.getAttribute('data-board'), true);
+        show(2, true);
+      } else if (t.hasAttribute('data-next')) { show(step + 1, true); }
+      else if (t.hasAttribute('data-back')) { show(step - 1, true); }
+      else if (t.hasAttribute('data-to')) { show(+t.getAttribute('data-to'), true); }
+      else if (t.hasAttribute('data-restart')) {
+        reached = 1; show(1, true);
+      }
+    });
+
+    // The flash and the Wi-Fi handoff both happen inside the flasher's own
+    // dialog, which the library appends to <body> and removes on close. That
+    // removal is the honest signal that the session ended -- it does not mean
+    // it succeeded, so it advances to the Wi-Fi step rather than past it.
+    if (window.MutationObserver) {
+      var saw = false;
+      new MutationObserver(function (recs) {
+        recs.forEach(function (r) {
+          [].forEach.call(r.addedNodes, function (n) {
+            if (n.nodeType === 1 && n.tagName.indexOf('EWT-') === 0) saw = true;
+          });
+          [].forEach.call(r.removedNodes, function (n) {
+            if (n.nodeType === 1 && n.tagName.indexOf('EWT-') === 0 && saw && step === 2) {
+              saw = false;
+              show(3, true);
+            }
+          });
+        });
+      }).observe(document.body, { childList: true });
+    }
+
+    // Restore, in order of authority: an explicit ?board= in the link beats a
+    // remembered choice, because the link is the more recent decision.
+    var q = (location.search.match(/[?&]board=([a-z0-9]+)/i) || [])[1];
+    var saved = get('yoyu-board');
+    if (BOARDS[q]) setBoard(q, true);
+    else if (BOARDS[saved]) setBoard(saved, false);
+    var at = parseInt(get('yoyu-step'), 10);
+    reached = board && at >= 1 && at <= LAST ? at : 1;
+    body.classList.add('wiz');
+    show(board ? reached : 1, false);
+  })();
+
+  // Copy-link handoff for the browsers that can't flash. Inline and dependency
+  // free, same reason the flasher is self-hosted: nothing external on a page
+  // that handles Wi-Fi credentials.
   (function () {
     var btn = document.getElementById('copy-url');
-    var url = document.getElementById('page-url').textContent.trim();
-    // No clipboard API (older browsers, insecure origin): the URL above is
-    // still selectable, so drop the button rather than leave a dead one.
+    // No clipboard API (older browsers, insecure origin): the URL is still
+    // selectable, so drop the button rather than leave a dead one.
     if (!navigator.clipboard) { btn.hidden = true; return; }
     btn.addEventListener('click', function () {
+      var url = document.getElementById('page-url').textContent.trim();
       navigator.clipboard.writeText(url).then(function () {
         btn.textContent = 'Link copied';
         btn.classList.add('done');
