@@ -3338,12 +3338,22 @@ static void dispatchGesture(uint8_t g);   // defined with the touch UI below
 // engine at all. Everything the UI reacts to -- tap, long press, the four
 // swipes -- is worked out here from where a finger landed and left.
 static const uint16_t CST_REG_TOUCH = 0xD000;
-static const uint16_t CST_REG_CMD   = 0xD101;
+// 0xD101 is DEBUG mode, not a generic "command mode". The distinction is the
+// whole ballgame: the info registers are only readable from it, and a chip
+// left sitting in it answers every touch read with a frozen idle frame and
+// never raises its interrupt. Normal reporting has to be asked for by name.
+static const uint16_t CST_REG_DEBUG  = 0xD101;
+static const uint16_t CST_REG_NORMAL = 0xD109;
+static const uint16_t CST_REG_MODE_RB = 0x0002;   // echoes the mode just set
 static const uint16_t CST_REG_CHECK = 0xD1FC;
 static const uint16_t CST_REG_RES   = 0xD1F8;
 static const uint16_t CST_REG_INFO  = 0xD204;
 static const uint8_t  CST_ACK       = 0xAB;   // written back to release a report
-static const uint8_t  CST_DATA_LEN  = 30;     // 5 points x 5 bytes + 5 header
+// 2 points, not 5. ESPHome assumes five fingers and reads 30 bytes; the
+// vendor's own driver declares MAX_FINGER_NUM as 2 and reads 15. Asking for
+// more than the chip has to give can spoil the transaction, and this panel
+// is not a five-finger surface anyway.
+static const uint8_t  CST_DATA_LEN  = 15;     // 2 points x 5 bytes + 5 header
 
 // Wake it and confirm it is the part we think it is. Without the command-mode
 // write the chip acknowledges its address and returns nothing but zeroes
@@ -3355,7 +3365,7 @@ static bool cstBegin() {
   // raising its interrupt line. Whatever the handshake is, it completes by
   // going through the whole sequence.
   uint8_t buf[4];
-  if (!i2cWrite16(TOUCH_ADDR, CST_REG_CMD, buf, 0)) return false;
+  if (!i2cWrite16(TOUCH_ADDR, CST_REG_DEBUG, buf, 0)) return false;
   delay(5);
   if (!i2cRead16(TOUCH_ADDR, CST_REG_CHECK, buf, 4)) return false;
   uint32_t check = (uint32_t)buf[3] << 24 | (uint32_t)buf[2] << 16 |
@@ -3369,6 +3379,17 @@ static bool cstBegin() {
   // noise: it should come back as the panel's own size.
   Serial.printf("[touch] checkcode %08lX  id 0x%04X  reports %dx%d\n",
                 (unsigned long)check, id, rw, rh);
+
+  // Leave debug mode. Everything above was read from it; nothing below works
+  // until the chip is put back to reporting touches.
+  if (!i2cWrite16(TOUCH_ADDR, CST_REG_NORMAL, buf, 0)) return false;
+  delay(10);
+  // The chip echoes the mode it settled into, so this is checkable rather than
+  // hopeful: the low byte should come back as the one just written.
+  if (i2cRead16(TOUCH_ADDR, CST_REG_MODE_RB, buf, 2)) {
+    Serial.printf("[touch] work mode -> 0x%02X (wanted 0x%02X)\n",
+                  buf[1], (uint8_t)(CST_REG_NORMAL & 0xFF));
+  }
   return true;
 }
 
@@ -3400,8 +3421,13 @@ static void pollTouchCst9220() {
   // Log anything that isn't a quiet screen, so a report that arrives but is
   // rejected can be told from no report at all.
   static uint8_t prevRaw[8];
-  if (memcmp(b, prevRaw, 8)) {
+  static unsigned long lastRaw = 0;
+  // Periodically as well as on change. prevRaw starts as zeroes, so an
+  // all-zero frame is silently equal to it and prints nothing -- which reads
+  // exactly like a read that failed.
+  if (memcmp(b, prevRaw, 8) || millis() - lastRaw > 2000) {
     memcpy(prevRaw, b, 8);
+    lastRaw = millis();
     Serial.printf("[touch] raw %02X %02X %02X %02X %02X %02X %02X  "
                   "valid=%d fingers=%d x=%d y=%d\n",
                   b[0], b[1], b[2], b[3], b[4], b[5], b[6],
