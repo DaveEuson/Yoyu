@@ -149,15 +149,103 @@ static void initLayout() {
 }
 
 // Claude night palette in RGB565 (macro provided by Arduino_GFX)
-static const uint16_t C_BG    = RGB565(0x26, 0x26, 0x24);
-static const uint16_t C_INK   = RGB565(0xF5, 0xF4, 0xEF);
-static const uint16_t C_MUTED = RGB565(0x94, 0x90, 0x7E);
-static const uint16_t C_ACC   = RGB565(0xD9, 0x77, 0x57);   // Claude orange
-static const uint16_t C_ACC_T = RGB565(0x4A, 0x38, 0x2F);
-static const uint16_t C_WARN  = RGB565(0xFA, 0xB2, 0x19);
-static const uint16_t C_WARN_T= RGB565(0x46, 0x3B, 0x1A);
-static const uint16_t C_CRIT  = RGB565(0xE0, 0x52, 0x52);
-static const uint16_t C_CRIT_T= RGB565(0x4A, 0x27, 0x27);
+// The nine UI colours, now chosen at runtime rather than compiled in.
+//
+// The reason is the AMOLED board. On the IPS panel the ground is a *backlit*
+// dark grey, so the whole screen sits at a similar luminance and the accents
+// read as warm. On an AMOLED the same ground is pixels switched off, emitting
+// nothing at all -- so every lit element runs at full blast against true black
+// with no middle register. Identical values, completely different physics.
+//
+// Each theme supplies its own full three-tier ladder, so the rule that a state
+// is never carried by hue alone (fill colour + fill length + a printed number)
+// survives every one of them. Mono has no hue to carry it with and leans on
+// luminance instead, which is exactly why the other two signals exist.
+//
+// The mascot's four colours are deliberately NOT themed: they are shared
+// byte-for-byte with the SVG on the setup page, and a kitsune that changed
+// colour with the background would stop being the same character.
+static uint16_t C_BG, C_INK, C_MUTED;
+static uint16_t C_ACC, C_ACC_T, C_WARN, C_WARN_T, C_CRIT, C_CRIT_T;
+
+enum { THEME_NIGHT = 0, THEME_DIM, THEME_PAPER, THEME_MONO,
+       THEME_NORD, THEME_TOKYO, THEME_COUNT };
+static const char *const THEME_NAMES[THEME_COUNT] = {
+    "Night", "Dim", "Paper", "Mono", "Nord", "Tokyo Night"};
+static int uiTheme = -1;           // -1 = not applied yet
+
+static void applyTheme(int t) {
+  if (t < 0 || t >= THEME_COUNT) t = THEME_NIGHT;
+  uiTheme = t;
+  switch (t) {
+    case THEME_DIM:
+      // For an always-on AMOLED, especially after dark. A true-black ground
+      // costs no light at all on that panel, and every accent is pulled down
+      // to roughly 40% so nothing glares in a dim room. It also gives the
+      // static labels far less to burn in with.
+      C_BG    = RGB565(0x0A, 0x0A, 0x0A); C_INK   = RGB565(0x9A, 0x98, 0x90);
+      C_MUTED = RGB565(0x55, 0x53, 0x4B);
+      C_ACC   = RGB565(0x8A, 0x4C, 0x37); C_ACC_T = RGB565(0x2A, 0x20, 0x19);
+      C_WARN  = RGB565(0x9E, 0x70, 0x10); C_WARN_T= RGB565(0x2A, 0x24, 0x10);
+      C_CRIT  = RGB565(0x8E, 0x34, 0x34); C_CRIT_T= RGB565(0x2C, 0x18, 0x18);
+      break;
+    case THEME_PAPER:
+      // The project's own paper palette, reused rather than reinvented: these
+      // are the values DESIGN.md already vouches for on cream, including the
+      // terracotta picked "to be read" rather than to fill a surface. Inverting
+      // the night theme instead would have put #94907e on a light ground, which
+      // measures 2.75:1 and fails AA -- the exact mistake the Polarity Rule
+      // exists to prevent.
+      C_BG    = RGB565(0xF0, 0xEE, 0xE6); C_INK   = RGB565(0x3D, 0x39, 0x29);
+      C_MUTED = RGB565(0x6B, 0x67, 0x59);
+      C_ACC   = RGB565(0xA8, 0x44, 0x2A); C_ACC_T = RGB565(0xE6, 0xD6, 0xCE);
+      C_WARN  = RGB565(0x8A, 0x5A, 0x00); C_WARN_T= RGB565(0xEE, 0xE2, 0xC4);
+      C_CRIT  = RGB565(0xA8, 0x2A, 0x2A); C_CRIT_T= RGB565(0xF0, 0xD6, 0xD6);
+      break;
+    case THEME_MONO:
+      // No hue at all. The ladder climbs in brightness instead -- dim, brighter,
+      // brightest -- which works because colour was never the only carrier.
+      C_BG    = RGB565(0x0A, 0x0A, 0x0A); C_INK   = RGB565(0xE8, 0xE8, 0xE8);
+      C_MUTED = RGB565(0x6E, 0x6E, 0x6E);
+      C_ACC   = RGB565(0xA0, 0xA0, 0xA0); C_ACC_T = RGB565(0x26, 0x26, 0x26);
+      C_WARN  = RGB565(0xD0, 0xD0, 0xD0); C_WARN_T= RGB565(0x2E, 0x2E, 0x2E);
+      C_CRIT  = RGB565(0xFF, 0xFF, 0xFF); C_CRIT_T= RGB565(0x38, 0x38, 0x38);
+      break;
+    case THEME_NORD:
+      // Nord (Arctic Ice Studio, MIT). Its own Aurora green/yellow/red are a
+      // ready-made three-tier ladder, which is the only reason a borrowed
+      // palette can be dropped in at all -- a scheme without semantic tiers
+      // could not drive these meters however good it looked.
+      //
+      // Muted is nord9 rather than nord3. nord3 is Nord's comment colour and
+      // measures 1.7:1 here: fine greyed out on a large monitor, unreadable as
+      // body text on a 2" panel at arm's length. nord9 is still Nord, at 4.6:1.
+      C_BG    = RGB565(0x2E, 0x34, 0x40); C_INK   = RGB565(0xEC, 0xEF, 0xF4);
+      C_MUTED = RGB565(0x81, 0xA1, 0xC1);
+      C_ACC   = RGB565(0xA3, 0xBE, 0x8C); C_ACC_T = RGB565(0x48, 0x52, 0x51);
+      C_WARN  = RGB565(0xEB, 0xCB, 0x8B); C_WARN_T= RGB565(0x58, 0x55, 0x50);
+      C_CRIT  = RGB565(0xBF, 0x61, 0x6A); C_CRIT_T= RGB565(0x4E, 0x3E, 0x49);
+      break;
+    case THEME_TOKYO:
+      // Tokyo Night (enkia, MIT). Same story: muted is the palette's blue
+      // rather than its comment colour, which measures 2.8:1 on this ground.
+      // The tier colours are untouched -- they are the theme's identity, and
+      // the meters carry state with fill length and a printed number as well.
+      C_BG    = RGB565(0x1A, 0x1B, 0x26); C_INK   = RGB565(0xC0, 0xCA, 0xF5);
+      C_MUTED = RGB565(0x7A, 0xA2, 0xF7);
+      C_ACC   = RGB565(0x9E, 0xCE, 0x6A); C_ACC_T = RGB565(0x37, 0x42, 0x35);
+      C_WARN  = RGB565(0xE0, 0xAF, 0x68); C_WARN_T= RGB565(0x46, 0x3C, 0x35);
+      C_CRIT  = RGB565(0xF7, 0x76, 0x8E); C_CRIT_T= RGB565(0x4B, 0x2F, 0x3D);
+      break;
+    default:                                  // THEME_NIGHT -- the original
+      C_BG    = RGB565(0x26, 0x26, 0x24); C_INK   = RGB565(0xF5, 0xF4, 0xEF);
+      C_MUTED = RGB565(0x94, 0x90, 0x7E);
+      C_ACC   = RGB565(0xD9, 0x77, 0x57); C_ACC_T = RGB565(0x4A, 0x38, 0x2F);
+      C_WARN  = RGB565(0xFA, 0xB2, 0x19); C_WARN_T= RGB565(0x46, 0x3B, 0x1A);
+      C_CRIT  = RGB565(0xE0, 0x52, 0x52); C_CRIT_T= RGB565(0x4A, 0x27, 0x27);
+      break;
+  }
+}
 
 // Yoyu, the kitsune
 static const uint16_t C_SPRK  = RGB565(0xC9, 0x60, 0x3F);   // fox fur
@@ -1641,6 +1729,7 @@ static void handleStatus() {
   doc["version"] = FW_VERSION;
   doc["self_hosted"] = selfHosted;
   doc["board"] = BOARD_SLUG;          // which panel this build drives
+  doc["theme"] = THEME_NAMES[uiTheme < 0 ? 0 : uiTheme];
   doc["plan"] = plan[0] ? plan : (const char *)nullptr;
   // Why the last poll said what it said, and how the release check is faring.
   // Both were previously visible only on the board's own screen, which makes a
@@ -2036,6 +2125,7 @@ static void loadCreds() {
   bool hadRefresh = prefs.isKey("rtok");
   strlcpy(plan, prefs.getString("plan", "").c_str(), sizeof(plan));
   showUsed   = prefs.getBool("used", false);
+  applyTheme(prefs.getInt("theme", DEFAULT_THEME));
   ntfyTopic  = prefs.getString("ntfy", "");
   poToken    = prefs.getString("potok", "");
   poUser     = prefs.getString("pouser", "");
@@ -2099,6 +2189,12 @@ static void loadCreds() {
 static void applyTz() {
   setenv("TZ", tzEnv, 1);
   tzset();
+}
+
+static void saveTheme() {
+  prefs.begin("headroom", false);
+  prefs.putInt("theme", uiTheme);
+  prefs.end();
 }
 
 static void saveCreds() {
@@ -2942,7 +3038,16 @@ static void handleSettingsPage() {
     else { s += "Every "; s += ROT_OPTS[i]; s += "s"; }
     s += "</option>";
   }
+  s += F("</select><label>Theme</label><select name=theme>");
+  for (int i = 0; i < THEME_COUNT; i++) {
+    s += "<option value="; s += i;
+    if (i == uiTheme) s += " selected";
+    s += ">"; s += THEME_NAMES[i]; s += "</option>";
+  }
   s += F("</select>"
+         "<p class=muted>Dim suits an always-on AMOLED, where an unlit pixel "
+         "emits nothing and the accents otherwise run at full brightness. "
+         "Paper is for a bright room. Mono drops colour entirely.</p>"
          "<label>Push token <span class=muted>(optional)</span></label>"
          "<input type=text name=ptok autocomplete=off placeholder='");
   s += pushToken.length() ? "set - leave blank to keep" : "off - any device on your Wi-Fi can feed the board";
@@ -2993,6 +3098,13 @@ static void handleSettingsSave() {
     prefs.putInt("dscr", defaultScreen);
     prefs.putInt("rots", rotateSecs);
     if (!screenEnabled(uiScreen)) uiScreen = defaultScreen;  // current got turned off
+  }
+  if (server->hasArg("theme")) {
+    int t = server->arg("theme").toInt();
+    if (t != uiTheme) {
+      applyTheme(t);
+      prefs.putInt("theme", uiTheme);   // inside the open prefs transaction
+    }
   }
   if (server->hasArg("ptok")) {
     String t = server->arg("ptok");
@@ -3191,6 +3303,147 @@ static bool i2cRead(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t n) {
   return true;
 }
 
+// CST92xx parts address their registers with 16 bits, unlike the CST816D's 8.
+// That difference is most of why the existing read does not port to them.
+static bool i2cRead16(uint8_t addr, uint16_t reg, uint8_t *buf, uint8_t n) {
+  Wire.beginTransmission(addr);
+  Wire.write((uint8_t)(reg >> 8));
+  Wire.write((uint8_t)(reg & 0xFF));
+  if (Wire.endTransmission(false) != 0) return false;   // repeated start
+  if (Wire.requestFrom((int)addr, (int)n) != n) return false;
+  for (uint8_t i = 0; i < n; i++) buf[i] = Wire.read();
+  return true;
+}
+
+static bool i2cWrite16(uint8_t addr, uint16_t reg, const uint8_t *data,
+                       uint8_t n) {
+  Wire.beginTransmission(addr);
+  Wire.write((uint8_t)(reg >> 8));
+  Wire.write((uint8_t)(reg & 0xFF));
+  for (uint8_t i = 0; i < n; i++) Wire.write(data[i]);
+  return Wire.endTransmission() == 0;
+}
+
+static void dispatchGesture(uint8_t g);   // defined with the touch UI below
+
+#if !TOUCH_IS_CST816
+// ---- CST9220 (Hynitron CST92xx) -----------------------------------------
+//
+// Register map and framing taken from ESPHome's cst9220 component, which is
+// the only open implementation of this part -- Hynitron do not publish a
+// datasheet and Waveshare's wiki does not document the protocol.
+//
+// Two things make it unlike the CST816D the other board uses: registers are
+// addressed with 16 bits, and the chip reports raw coordinates with no gesture
+// engine at all. Everything the UI reacts to -- tap, long press, the four
+// swipes -- is worked out here from where a finger landed and left.
+static const uint16_t CST_REG_TOUCH = 0xD000;
+static const uint16_t CST_REG_CMD   = 0xD101;
+static const uint16_t CST_REG_CHECK = 0xD1FC;
+static const uint16_t CST_REG_RES   = 0xD1F8;
+static const uint16_t CST_REG_INFO  = 0xD204;
+static const uint8_t  CST_ACK       = 0xAB;   // written back to release a report
+static const uint8_t  CST_DATA_LEN  = 30;     // 5 points x 5 bytes + 5 header
+
+// Wake it and confirm it is the part we think it is. Without the command-mode
+// write the chip acknowledges its address and returns nothing but zeroes
+// forever, which looks exactly like a screen nobody is touching.
+static bool cstBegin() {
+  // The exact order the vendor's own driver walks. The two reads in the middle
+  // are not curiosity: writing command mode and then jumping straight to touch
+  // reports leaves the chip answering with a frozen idle frame and never
+  // raising its interrupt line. Whatever the handshake is, it completes by
+  // going through the whole sequence.
+  uint8_t buf[4];
+  if (!i2cWrite16(TOUCH_ADDR, CST_REG_CMD, buf, 0)) return false;
+  delay(5);
+  if (!i2cRead16(TOUCH_ADDR, CST_REG_CHECK, buf, 4)) return false;
+  uint32_t check = (uint32_t)buf[3] << 24 | (uint32_t)buf[2] << 16 |
+                   (uint32_t)buf[1] << 8 | buf[0];
+  if (!i2cRead16(TOUCH_ADDR, CST_REG_RES, buf, 4)) return false;
+  int rw = (int)buf[1] << 8 | buf[0];
+  int rh = (int)buf[3] << 8 | buf[2];
+  if (!i2cRead16(TOUCH_ADDR, CST_REG_INFO, buf, 4)) return false;
+  uint16_t id = (uint16_t)buf[1] << 8 | buf[0];
+  // Resolution is the honest check that this is a conversation rather than
+  // noise: it should come back as the panel's own size.
+  Serial.printf("[touch] checkcode %08lX  id 0x%04X  reports %dx%d\n",
+                (unsigned long)check, id, rw, rh);
+  return true;
+}
+
+// One press, start to finish. The gesture codes match the CST816D's so that
+// dispatchGesture() -- and every screen's reading of it -- stays untouched:
+// 1 up, 2 down, 3 left, 4 right, 5 tap, 0x0C long press.
+static void pollTouchCst9220() {
+#if TOUCH_INT != GFX_NOT_DEFINED
+  // The controller pulls this low when a report is waiting. Reading whenever we
+  // feel like it returns a stale idle frame -- FF FF FF FF with no acknowledge
+  // byte -- which is indistinguishable from a screen nobody is touching.
+  static int prevInt = -1;
+  int intNow = digitalRead(TOUCH_INT);
+#if defined(YOYU_TOUCH_PROBE)
+  if (intNow != prevInt) {
+    prevInt = intNow;
+    Serial.printf("[touch] INT -> %s\n", intNow ? "high (idle)" : "LOW (report)");
+  }
+#endif
+  if (intNow) return;                 // nothing waiting
+#endif
+  uint8_t b[CST_DATA_LEN];
+  if (!i2cRead16(TOUCH_ADDR, CST_REG_TOUCH, b, CST_DATA_LEN)) return;
+  bool valid = (b[6] == CST_ACK);
+  uint8_t fingers = valid ? (b[5] & 0x7F) : 0;
+#if defined(YOYU_TOUCH_PROBE)
+  // Log anything that isn't a quiet screen, so a report that arrives but is
+  // rejected can be told from no report at all.
+  static uint8_t prevRaw[8];
+  if (memcmp(b, prevRaw, 8)) {
+    memcpy(prevRaw, b, 8);
+    Serial.printf("[touch] raw %02X %02X %02X %02X %02X %02X %02X  "
+                  "valid=%d fingers=%d x=%d y=%d\n",
+                  b[0], b[1], b[2], b[3], b[4], b[5], b[6],
+                  valid, fingers,
+                  ((int)b[1] << 4) | (b[3] >> 4),
+                  ((int)b[2] << 4) | (b[3] & 0x0F));
+  }
+#endif
+  int x = ((int)b[1] << 4) | (b[3] >> 4);
+  int y = ((int)b[2] << 4) | (b[3] & 0x0F);
+  if (valid) {                      // release the report so the next one lands
+    uint8_t ack = CST_ACK;
+    i2cWrite16(TOUCH_ADDR, CST_REG_TOUCH, &ack, 1);
+  }
+
+  static bool down = false;
+  static int x0, y0;
+  static unsigned long t0;
+
+  if (fingers && !down) {           // finger arrived
+    down = true; x0 = x; y0 = y; t0 = millis();
+    return;
+  }
+  if (fingers || !down) return;     // still held, or nothing happening
+  down = false;                     // finger left: decide what it was
+
+  int dx = x - x0, dy = y - y0;
+  unsigned long held = millis() - t0;
+  // A swipe has to cover a real distance, so a shaky tap is not read as one.
+  // Scaled to the panel rather than fixed pixels: the same gesture should mean
+  // the same thing on a 240px screen and a 480px one.
+  int minMove = scrW / 6;
+  if (abs(dx) > minMove && abs(dx) >= abs(dy)) {
+    dispatchGesture(dx < 0 ? 0x03 : 0x04);          // left / right
+  } else if (abs(dy) > minMove) {
+    dispatchGesture(dy < 0 ? 0x01 : 0x02);          // up / down
+  } else if (held > 500) {
+    dispatchGesture(0x0C);                          // long press
+  } else {
+    dispatchGesture(0x05);                          // tap
+  }
+}
+#endif  // !TOUCH_IS_CST816
+
 static void i2cWrite(uint8_t addr, uint8_t reg, uint8_t val) {
   Wire.beginTransmission(addr);
   Wire.write(reg);
@@ -3200,17 +3453,44 @@ static void i2cWrite(uint8_t addr, uint8_t reg, uint8_t val) {
 
 static void sensorsBegin() {
 #if TOUCH_RST != GFX_NOT_DEFINED
-  // The CST9220 holds itself in reset until this is released; the CST816D has
-  // no reset line brought out at all.
+  // High-low-high, per the vendor sequence: the part wants to see a settled
+  // line before the pulse, not just a rising edge out of whatever state the
+  // pin powered up in. The CST816D has no reset line brought out at all.
+#if TOUCH_INT != GFX_NOT_DEFINED
+  pinMode(TOUCH_INT, INPUT_PULLUP);
+#endif
   pinMode(TOUCH_RST, OUTPUT);
+  digitalWrite(TOUCH_RST, HIGH);
+  delay(5);
   digitalWrite(TOUCH_RST, LOW);
   delay(10);
   digitalWrite(TOUCH_RST, HIGH);
-  delay(50);
+  delay(30);
 #endif
   Wire.begin(I2C_SDA, I2C_SCL, 400000);
+  // Every address that answers, logged once at boot. Both sensors degrade
+  // silently by design -- a chip that isn't found just switches its feature off
+  // -- which means wrong pins and a wrong address are indistinguishable from
+  // hardware working fine with the feature disabled. This is the one place that
+  // can tell them apart, and it costs a single pass at startup.
+  Serial.printf("[i2c] scanning SDA=%d SCL=%d\n", I2C_SDA, I2C_SCL);
+  int found = 0;
+  for (uint8_t a = 1; a < 127; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("[i2c]   device at 0x%02X\n", a);
+      found++;
+    }
+  }
+  Serial.printf("[i2c] %d device(s); expecting touch 0x%02X, imu 0x%02X/0x%02X\n",
+                found, TOUCH_ADDR, IMU_ADDR_A, IMU_ADDR_B);
   Wire.beginTransmission(TOUCH_ADDR);
   touchOk = (Wire.endTransmission() == 0);
+#if !TOUCH_IS_CST816
+  // Answering its address is not the same as being awake -- see cstBegin().
+  if (touchOk) touchOk = cstBegin();
+#endif
+  Serial.printf("[touch] controller %s\n", touchOk ? "ready" : "not found");
   uint8_t imuCandidates[2] = {IMU_ADDR_A, IMU_ADDR_B};
   for (uint8_t a : imuCandidates) {
     uint8_t who = 0;
@@ -3314,9 +3594,7 @@ static void dispatchGesture(uint8_t g) {
 static void pollTouch() {
   if (!touchOk) return;
 #if !TOUCH_IS_CST816
-  // Touch is not wired for this board's controller yet; see boards.h. Every
-  // other input path (BOOT button, web UI, auto-rotate) still works, so the
-  // board is usable, just not tappable.
+  pollTouchCst9220();
   return;
 #else
   uint8_t b[6];
@@ -3439,6 +3717,7 @@ void setup() {
   ledcSetup(BL_CHANNEL, 5000, 8);    // backlight PWM (active high on this board)
   ledcAttachPin(LCD_BL, BL_CHANNEL);
 #endif
+  applyTheme(DEFAULT_THEME);         // before any drawing; loadCreds may change it
   gfx->begin(40000000);
   displayReady = true;               // brightness may now reach the panel
   setBacklight(255);

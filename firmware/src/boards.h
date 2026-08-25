@@ -58,6 +58,10 @@
 // needs its own transition (publish both names for several releases), not a
 // tidy-up. See PRODUCT.md, "Identifiers that deliberately did not follow the
 // rename".
+// A backlit IPS panel has a floor of emitted light anyway, so the original
+// palette reads as intended on it.
+#define DEFAULT_THEME     0      // Night
+
 #define OTA_ASSET_PREFIX  "headroom-mini"
 
 // --------------------------------------- Waveshare ESP32-S3-Touch-AMOLED-2.16
@@ -93,21 +97,24 @@
 #define TOUCH_SCL         14
 #define TOUCH_INT         11
 #define TOUCH_RST         40
-// UNVERIFIED: Waveshare's wiki does not publish the CST9220 address. 0x5A is
-// the usual CST92xx address, but confirm against the real board before trusting
-// it -- a wrong address degrades to "no touch found", which this firmware
-// already survives, so it will look like working hardware with a dead screen.
-#define TOUCH_ADDR        0x5A
-// The CST9220 is a CST92xx-family multi-touch controller: 16-bit register
-// addressing and no hardware gesture engine, so the CST816D read below does not
-// port to it and gestures have to be derived from coordinates in software.
-// Deliberately not written blind -- a guessed register map reads as "no touch
-// chip", which this firmware survives, so it would look like working hardware.
+#define TOUCH_ADDR        0x5A   // confirmed by bus scan, see below
+// CONFIRMED on hardware: an I2C scan of this board answers at 0x5A, alongside
+// the IMU at 0x6B, an RTC at 0x51 and an audio codec at 0x18.
+//
+// The CST9220 is a CST92xx-family multi-touch controller: 16-bit registers and
+// no hardware gesture engine, so the CST816D read does not port to it and taps,
+// long presses and swipes are derived from coordinates. Register map from
+// ESPHome's cst9220 component -- Hynitron publish no datasheet.
 #define TOUCH_IS_CST816   0
 
 // UNVERIFIED: no battery divider is documented for this board. Left off rather
 // than guessed; the gauge already hides itself when there is no reading.
 #define HAS_BATTERY_ADC   0
+
+// An AMOLED has no such floor: an unlit pixel emits nothing, so the accents
+// run at full blast against true black and the first impression of the panel
+// is glare. It opens on Dim, and Night is still one setting away.
+#define DEFAULT_THEME     1      // Dim
 
 #define OTA_ASSET_PREFIX  "yoyu-amoled"
 
