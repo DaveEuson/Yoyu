@@ -41,12 +41,20 @@ Everything runs on the one ~$26 board — no Raspberry Pi, no soldering.
   [on Amazon](https://www.amazon.com/dp/B0DTTL56ZR?tag=daveeuson01-20) ·
   [direct from Waveshare](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)
 
-**Coming soon: a bigger screen.** Support for the
+**In progress: a bigger screen.** Support for the
 [Waveshare ESP32-S3-Touch-AMOLED-2.16](https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm)
-(2.16", 480×480 AMOLED) is being built — pins, display driver and build target
-are already in the firmware. **Don't buy one yet:** no image is published for it
-and the flasher above only offers the 2" LCD board, so there is nothing to
-install on it today. This page will say so when there is.
+(2.16", 480×480 AMOLED) is being brought up in the open. It boots, joins Wi-Fi,
+shows every screen and reads your usage — but:
+
+> **Touch does not work on it.** The screen is a display, not a control. You can
+> still change screens by leaving auto-rotate on, and everything else is
+> configured from a browser, but you cannot tap it. The panel's controller
+> initialises and reports its own resolution, then never reports a press; that
+> is unsolved, not merely unwritten.
+
+**Don't buy one for this yet.** The flasher above still offers only the 2" LCD
+board, so the AMOLED has to be built and flashed from source. This page will say
+when that changes.
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
 
