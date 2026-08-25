@@ -453,6 +453,7 @@ class TopupKeyLookupTests(_QuietTest):
         self.saved = []
         companion._ID_CACHE.clear()
         self.addCleanup(companion._ID_CACHE.clear)
+        self._orig_board_id = companion.board_id
         for name, repl in (
                 ("_topup_keys", lambda: dict(self.keys)),
                 ("board_id", lambda u, refresh=False: self.ids.get(u.rstrip("/"))),
@@ -489,6 +490,27 @@ class TopupKeyLookupTests(_QuietTest):
         self.ips = {"http://yoyu.local:8080": "192.168.0.77",
                     "http://192.168.0.76:8080": "192.168.0.76"}
         self.assertIsNone(companion.topup_key_for("http://192.168.0.76:8080"))
+
+    def test_an_unreachable_board_is_asked_again_next_time(self):
+        """Found on hardware: a board probed mid-reboot answered nothing, and
+        the absence was cached, so it stayed id-less for the whole run."""
+        calls = []
+        replies = [None, {"id": "ab12cd"}]     # rebooting, then up
+
+        def fake_probe(u, timeout=0.8):
+            calls.append(u)
+            return replies[min(len(calls) - 1, len(replies) - 1)]
+
+        orig_probe = companion._probe_info
+        orig_bid = self._orig_board_id
+        companion._probe_info = fake_probe
+        companion.board_id = orig_bid          # the real one, not the stub
+        self.addCleanup(setattr, companion, "_probe_info", orig_probe)
+        companion._ID_CACHE.clear()
+
+        self.assertIsNone(companion.board_id("http://b:8080"))
+        self.assertEqual(companion.board_id("http://b:8080"), "ab12cd")
+        self.assertEqual(len(calls), 2, "a missing id must not be cached")
 
     def test_migration_refiles_under_the_id(self):
         self.keys = {"http://yoyu.local:8080": "k"}

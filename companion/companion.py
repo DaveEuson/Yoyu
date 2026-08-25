@@ -716,12 +716,20 @@ _ID_CACHE = {}
 
 def board_id(url, refresh=False):
     """This board's stable name. None if it can't be reached, or if it runs
-    firmware older than 1.7.0, which had no id to give."""
+    firmware older than 1.7.0, which had no id to give.
+
+    Only answers are cached, never the absence of one. A board that happens to
+    be rebooting when it is first asked would otherwise be treated as having no
+    id for the rest of the run -- which is not a hypothetical: it is what
+    happened the first time this was pointed at two freshly flashed boards.
+    """
     u = url.rstrip("/")
-    if refresh or u not in _ID_CACHE:
-        info = _probe_info(u, timeout=3)
-        _ID_CACHE[u] = (info or {}).get("id")
-    return _ID_CACHE[u]
+    if not refresh and _ID_CACHE.get(u):
+        return _ID_CACHE[u]
+    ident = (_probe_info(u, timeout=3) or {}).get("id")
+    if ident:
+        _ID_CACHE[u] = ident
+    return ident
 
 
 def _local_prefixes():

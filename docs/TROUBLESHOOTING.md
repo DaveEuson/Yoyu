@@ -175,7 +175,8 @@ board would only multiply the rate limiting.
   collision and the second one to start up comes up as `yoyu-2.local`
   instead, so both are reachable — but which is which is decided by boot
   order and swaps when they restart together. Address a specific board by
-  its IP, or by the id on its settings page.
+  its IP, or by the id printed at the bottom of the page it serves at its
+  own address.
 - **Pairing is per board.** Each holds its own top-up key, so pairing one
   does nothing for the other. With two boards the tray gives each its own
   submenu, with **Pair this board** inside it. If a board says its key was
