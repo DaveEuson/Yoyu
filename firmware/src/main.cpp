@@ -75,14 +75,14 @@ static inline void tlsTrust(WiFiClientSecure &c) {
 static Arduino_DataBus *bus =
     new Arduino_ESP32QSPI(QSPI_CS, QSPI_CLK, QSPI_D0, QSPI_D1, QSPI_D2, QSPI_D3);
 static Arduino_GFX *gfx =
-    new Arduino_CO5300(bus, PANEL_RST, PANEL_ROTATION, true /*IPS*/,
+    new Arduino_CO5300(bus, PANEL_RST, PANEL_ROTATION, PANEL_INVERT,
                        PANEL_W, PANEL_H);
 #else
 static Arduino_DataBus *bus =
     new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCLK, LCD_MOSI, LCD_MISO);
 // rotation 2 = portrait 240x320 flipped 180° (USB-C connector at the top)
 static Arduino_GFX *gfx =
-    new Arduino_ST7789(bus, LCD_RST, PANEL_ROTATION, true /*IPS*/,
+    new Arduino_ST7789(bus, LCD_RST, PANEL_ROTATION, PANEL_INVERT,
                        PANEL_W, PANEL_H);
 #endif
 // Off-screen framebuffer (PSRAM) for the animated kitsune screen: draw a whole
@@ -251,7 +251,16 @@ static bool apMode = false;
 
 // Same defaults as the Pi build
 static const char *AP_SSID = "Yoyu-Setup";
-static const char *AP_PSK  = "yoyu";
+// WPA2 will not accept fewer than 8 characters: softAP() refuses outright and
+// no hotspot is broadcast at all. The rename shortened this from "headroom" (8)
+// to "yoyu" (4), which shipped from v1.6.0 and quietly made first-run setup
+// impossible -- every existing board already had Wi-Fi saved, so none of them
+// ever entered the portal to show it. The assert below is the actual fix; the
+// password is just a password.
+static const char AP_PSK[] = "yoyusetup";
+static_assert(sizeof(AP_PSK) - 1 >= 8,
+              "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
+              "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
 static const char *FW_VERSION = "1.6.3";
 
@@ -439,6 +448,14 @@ static bool nightNow() {
 // self-emissive and has no such pin, so the same number goes to the panel
 // itself as a command. Same scale either way, so everything above this is
 // unchanged -- including the settings UI and the swipe gesture.
+// Set once gfx->begin() has run. On the LCD board brightness is a PWM pin that
+// exists from boot, so applyBacklight() could be called whenever; on the AMOLED
+// it is a command down the QSPI bus, and calling it early dereferences a bus
+// that has not been constructed yet. That crashed on the first boot of the
+// first AMOLED board -- a hard panic loop, from a line that had been correct on
+// the other panel for months.
+static bool displayReady = false;
+
 static void applyBacklight() {
   uint8_t eff = backlight;
   if (nightDim && nightNow() && eff > NIGHT_LEVEL) eff = NIGHT_LEVEL;
@@ -446,6 +463,7 @@ static void applyBacklight() {
 #if PANEL_HAS_BACKLIGHT
   ledcWrite(BL_CHANNEL, eff);
 #else
+  if (!displayReady) return;         // the bus that carries it isn't up yet
   static_cast<Arduino_CO5300 *>(gfx)->setBrightness(eff);
 #endif
 }
@@ -3355,7 +3373,13 @@ static void startPortal() {
   // AP+STA so WiFi.scanNetworks() can list nearby networks for the setup page
   // without dropping the phone off our hotspot.
   WiFi.mode(WIFI_AP_STA);
-  WiFi.softAP(AP_SSID, AP_PSK);
+  bool apUp = WiFi.softAP(AP_SSID, AP_PSK);
+  // Reported, because a hotspot that never comes up looks exactly like a
+  // hotspot you cannot find: the screen says "join Yoyu-Setup" either way.
+  Serial.printf("[portal] softAP(%s) -> %s  ip=%s  mac=%s  ch=%d\n",
+                AP_SSID, apUp ? "ok" : "FAILED",
+                WiFi.softAPIP().toString().c_str(),
+                WiFi.softAPmacAddress().c_str(), WiFi.channel());
   WiFi.disconnect();                            // STA idle, just here for scans
   dns.start(53, "*", WiFi.softAPIP());          // captive: everything -> us
   server = new WebServer(80);
@@ -3415,8 +3439,9 @@ void setup() {
   ledcSetup(BL_CHANNEL, 5000, 8);    // backlight PWM (active high on this board)
   ledcAttachPin(LCD_BL, BL_CHANNEL);
 #endif
-  setBacklight(255);
   gfx->begin(40000000);
+  displayReady = true;               // brightness may now reach the panel
+  setBacklight(255);
   initLayout();                      // must precede any drawing
   drawSplash("starting...", nullptr);
   sensorsBegin();                    // touch + IMU on the shared I2C bus
