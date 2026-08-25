@@ -69,12 +69,18 @@ jobs:
                      --jq .tagName 2>/dev/null || echo "")
           echo "bundling firmware from release: ${before:-<none>}"
           missing=0
-          for f in headroom-mini-bootloader.bin headroom-mini-partitions.bin \
-                   headroom-mini-boot_app0.bin headroom-mini-app.bin; do
-            curl -fsSL -o "docs/firmware/$f" "$base/$f" || {
-              echo "::warning::missing $f in latest release (flasher Install 404s until a release with split images exists)"
-              missing=1
-            }
+          # Both boards. The setup page's board picker points esp-web-tools at
+          # one manifest or the other, and a manifest whose parts were never
+          # bundled 404s at Install time -- which looks to the buyer like the
+          # board itself is broken. Whatever the picker can offer has to be here.
+          for pfx in headroom-mini yoyu-amoled; do
+            for part in bootloader partitions boot_app0 app; do
+              f="$pfx-$part.bin"
+              curl -fsSL -o "docs/firmware/$f" "$base/$f" || {
+                echo "::warning::missing $f in latest release (flasher Install 404s for that board)"
+                missing=1
+              }
+            done
           done
           echo "BUNDLED_TAG=${before}" >> "$GITHUB_ENV"
           echo "BUNDLE_INCOMPLETE=${missing}" >> "$GITHUB_ENV"
@@ -86,6 +92,7 @@ jobs:
           if [ -z "${BUNDLED_TAG}" ]; then
             echo "No release exists yet — nothing to verify."; exit 0
           fi
+          base="https://github.com/$GITHUB_REPOSITORY/releases/latest/download"
           after=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
           if [ "$after" != "${BUNDLED_TAG}" ]; then
             # A release published while this job was downloading. Whatever is on
@@ -101,15 +108,19 @@ jobs:
           fi
           # The flasher must install exactly what the release ships; a mismatch
           # here is the silent failure that shipped with v1.5.0.
-          curl -fsSL -o /tmp/release-app.bin \
-            "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/headroom-mini-app.bin"
-          a=$(sha256sum docs/firmware/headroom-mini-app.bin | cut -d' ' -f1)
-          b=$(sha256sum /tmp/release-app.bin | cut -d' ' -f1)
-          if [ "$a" != "$b" ]; then
-            echo "::error::bundled app.bin does not match $after ($a != $b)"
-            exit 1
-          fi
-          echo "flasher matches $after ($a)"
+          # Checked per board: one correct image is no evidence about the
+          # other, and the two are byte-for-byte different builds of the same
+          # version.
+          for pfx in headroom-mini yoyu-amoled; do
+            curl -fsSL -o "/tmp/$pfx-release-app.bin" "$base/$pfx-app.bin"
+            a=$(sha256sum "docs/firmware/$pfx-app.bin" | cut -d' ' -f1)
+            b=$(sha256sum "/tmp/$pfx-release-app.bin" | cut -d' ' -f1)
+            if [ "$a" != "$b" ]; then
+              echo "::error::bundled $pfx-app.bin does not match $after ($a != $b)"
+              exit 1
+            fi
+            echo "flasher matches $after for $pfx ($a)"
+          done
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
