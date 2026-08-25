@@ -350,7 +350,7 @@ static_assert(sizeof(AP_PSK) - 1 >= 8,
               "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
               "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
-static const char *FW_VERSION = "1.6.4";
+static const char *FW_VERSION = "1.6.5";
 
 // Phase 2 — self-contained: poll Anthropic's usage endpoint directly, using an
 // OAuth login pasted once via /connect. Same contract the companion uses.
@@ -358,7 +358,7 @@ static const char *CLIENT_ID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 static const char *REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 static const char *USAGE_URL   = "https://api.anthropic.com/api/oauth/usage";
 static const char *OAUTH_BETA  = "oauth-2025-04-20";
-static const char *UA          = "Yoyu/1.6.4";
+static const char *UA          = "Yoyu/1.6.5";
 // OTA self-update (over-the-air from the GitHub release)
 static const char *RELEASES_API =
     "https://api.github.com/repos/DaveEuson/Yoyu/releases/latest";
