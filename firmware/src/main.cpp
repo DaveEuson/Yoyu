@@ -3388,7 +3388,9 @@ static void pollTouchCst9220() {
     Serial.printf("[touch] INT -> %s\n", intNow ? "high (idle)" : "LOW (report)");
   }
 #endif
+#if !defined(YOYU_TOUCH_NOINT)
   if (intNow) return;                 // nothing waiting
+#endif
 #endif
   uint8_t b[CST_DATA_LEN];
   if (!i2cRead16(TOUCH_ADDR, CST_REG_TOUCH, b, CST_DATA_LEN)) return;
@@ -3410,7 +3412,11 @@ static void pollTouchCst9220() {
 #endif
   int x = ((int)b[1] << 4) | (b[3] >> 4);
   int y = ((int)b[2] << 4) | (b[3] & 0x0F);
-  if (valid) {                      // release the report so the next one lands
+  // Acknowledged unconditionally, not only for frames we liked. If the chip
+  // will not arm the next report until the last one is released, then skipping
+  // the write on an invalid frame deadlocks it -- the first frame after boot is
+  // never valid, so it would never send a second.
+  {
     uint8_t ack = CST_ACK;
     i2cWrite16(TOUCH_ADDR, CST_REG_TOUCH, &ack, 1);
   }
