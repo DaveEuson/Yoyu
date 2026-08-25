@@ -59,7 +59,7 @@ release builds. The developer flow below is only needed to change the firmware.
    BOOT, retry (classic ESP32 bootloader dance).
 
 4. On the screen: join the `Yoyu-Setup` Wi-Fi from your phone
-   (password `yoyu`), open `http://192.168.4.1`, then **pick your home
+   (password `yoyusetup`), open `http://192.168.4.1`, then **pick your home
    network from the scanned list** and type its password (or type the name by
    hand if it's hidden). The board reboots and shows its address.
 5. Feed it from your computer:

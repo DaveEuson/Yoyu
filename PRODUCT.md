@@ -74,7 +74,7 @@ The setup chain, in the order a buyer meets it:
    Firefox cannot flash — a real and recurring failure point.
 3. **Wi-Fi** is handed to the board over the same USB cable via Improv, in the
    same browser window. Fallback: the board's own `Yoyu-Setup` hotspot
-   (password `yoyu`) at `http://192.168.4.1`, used from a phone.
+   (password `yoyusetup`) at `http://192.168.4.1`, used from a phone.
 4. **Feed it usage** one of two ways:
    - *Push mode (default):* download and run the companion on the computer
      where Claude Code is used; it auto-discovers the board and pushes usage.

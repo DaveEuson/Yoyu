@@ -30,6 +30,10 @@
 #define PANEL_ROTATION    2      // portrait, USB-C on top
 #define PANEL_IS_QSPI     0
 #define PANEL_HAS_BACKLIGHT 1    // an IPS panel needs one; an AMOLED does not
+// IPS panels drive their pixels inverted, so the controller has to invert
+// back. Passed to the driver's `ips` argument, which is really just "send
+// INVON" -- get it wrong and every colour comes out as its complement.
+#define PANEL_INVERT      1
 
 #define LCD_SCLK          39
 #define LCD_MOSI          38
@@ -69,6 +73,11 @@
 #define PANEL_ROTATION    0
 #define PANEL_IS_QSPI     1
 #define PANEL_HAS_BACKLIGHT 0    // self-emissive; brightness is a panel command
+// An AMOLED emits directly and needs no inversion. Setting this the way the
+// IPS board needs it renders the whole UI as its own negative -- a white
+// background with black text and blue meters, which reads as a broken
+// layout rather than as a wrong flag.
+#define PANEL_INVERT      0
 
 // Arduino_ESP32QSPI takes its four data lines in the argument order
 // (mosi, miso, quadwp, quadhd), which are D0..D3 on the datasheet.
