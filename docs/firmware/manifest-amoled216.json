@@ -1,0 +1,16 @@
+{
+  "name": "Yoyu (AMOLED 2.16\")",
+  "version": "latest",
+  "new_install_prompt_erase": false,
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        { "path": "yoyu-amoled-bootloader.bin", "offset": 0 },
+        { "path": "yoyu-amoled-partitions.bin", "offset": 32768 },
+        { "path": "yoyu-amoled-boot_app0.bin", "offset": 57344 },
+        { "path": "yoyu-amoled-app.bin", "offset": 65536 }
+      ]
+    }
+  ]
+}
