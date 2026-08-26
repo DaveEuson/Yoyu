@@ -253,6 +253,28 @@ static const uint16_t C_SPRK_D= RGB565(0x9E, 0x44, 0x29);   // ear + tail shade
 static const uint16_t C_OUT   = RGB565(0x1A, 0x18, 0x16);   // outline / features
 static const uint16_t C_FACE  = RGB565(0xFA, 0xF7, 0xEF);   // face screen
 
+// The other avatars' colours. Fixed, like the kitsune's: an avatar that
+// changed colour with the theme would stop being the same object.
+static const uint16_t C_LEAF  = RGB565(0x7A, 0xA8, 0x5C);   // stem + leaves
+static const uint16_t C_LEAF_D= RGB565(0x4E, 0x6F, 0x3A);   // soil, wilted
+static const uint16_t C_WAX   = RGB565(0xE8, 0xE0, 0xC8);   // candle body
+static const uint16_t C_WAX_D = RGB565(0xB8, 0xAE, 0x93);   // its shaded side
+static const uint16_t C_LIT   = RGB565(0xE8, 0xE4, 0xD0);   // moon, sunlit
+static const uint16_t C_DARK  = RGB565(0x4A, 0x48, 0x3E);   // moon, earthshine
+
+// Which character the board wears. The kitsune keeps its own bespoke renderer
+// -- it has sub-cell mood features nothing else needs -- and the four added
+// here share a cell grid, which is what lets the same drawing serve the panel
+// and the web page without being written twice.
+enum { AV_KITSUNE, AV_MOON, AV_CANDLE, AV_PLANT, AV_CAT, AV_COUNT };
+static const char *const AVATAR_NAMES[AV_COUNT] = {
+    "Kitsune", "Moon", "Candle", "Plant", "Cat"};
+// What each one does to show headroom, for the picker. Naming the gauge is the
+// difference between choosing a picture and choosing an instrument.
+static const char *const AVATAR_GAUGE[AV_COUNT] = {
+    "tails fan out", "phase waxes", "burns down", "grows", "ball of yarn"};
+static int uiAvatar = AV_KITSUNE;
+
 static const int K_COLS = 18, K_ROWS = 15;
 static const int K_CELL = 13;   // px per cell at uiScale 1
 
@@ -1196,6 +1218,246 @@ static void drawKitsuneAnim(int mood, int frame) {
   }
 }
 
+// ---- the shared avatar grid ------------------------------------------------
+//
+// Everything except the kitsune draws into this and is then painted twice over:
+// once as fillRects onto the panel, once as <rect>s into the web page's SVG.
+// One definition, two surfaces -- which is the whole reason the avatars can be
+// swapped "everywhere" rather than only on the glass.
+static uint16_t avGrid[K_ROWS][K_COLS];
+
+static void avClear() {
+  for (int r = 0; r < K_ROWS; r++)
+    for (int c = 0; c < K_COLS; c++) avGrid[r][c] = 0;   // 0 = leave background
+}
+
+static void avCell(int c, int r, uint16_t col, int w = 1, int h = 1) {
+  for (int y = r; y < r + h; y++)
+    for (int x = c; x < c + w; x++)
+      if (x >= 0 && x < K_COLS && y >= 0 && y < K_ROWS) avGrid[y][x] = col;
+}
+
+// Headroom as 0..1, which is what every gauge below is a function of. Unknown
+// sits at half rather than empty: an avatar that looks spent before the first
+// reading arrives is lying about something it does not know yet.
+static float avFrac() {
+  int u = mascotUtil();
+  if (u < 0) return 0.5f;
+  int left = 100 - u;
+  return left < 0 ? 0.0f : left > 100 ? 1.0f : left / 100.0f;
+}
+
+// ---- moon: phase is the gauge, and it is continuous ------------------------
+static void avMoon(int mood, int frame) {
+  const float R = 7.5f, cx = (K_COLS - 1) / 2.0f, cy = (K_ROWS - 1) / 2.0f;
+  const float k = 1.0f - 2.0f * avFrac();
+  bool lit[K_ROWS][K_COLS], on[K_ROWS][K_COLS];
+  for (int r = 0; r < K_ROWS; r++)
+    for (int c = 0; c < K_COLS; c++) {
+      float nx = (c - cx) / R, ny = (r - cy) / R;
+      on[r][c] = (nx * nx + ny * ny) <= 1.0f;
+      // The terminator is an ellipse, not a straight cut: on a sphere the
+      // day/night line projects as one, and a straight edge reads as a pie
+      // chart rather than a moon.
+      float xt = k * sqrtf(fmaxf(0.0f, 1.0f - ny * ny));
+      lit[r][c] = nx > xt;
+      if (on[r][c]) avCell(c, r, lit[r][c] ? C_LIT : C_DARK);
+    }
+  // Features take their colour from the cell beneath, so the face stays
+  // readable on a waning crescent instead of vanishing into the dark half --
+  // which is exactly when you most want to be able to read it.
+  struct P { int c, r; };
+  auto feat = [&](const P *pts, int n) {
+    for (int i = 0; i < n; i++) {
+      int c = pts[i].c, r = pts[i].r;
+      if (c < 0 || c >= K_COLS || r < 0 || r >= K_ROWS || !on[r][c]) continue;
+      avCell(c, r, lit[r][c] ? C_OUT : C_LIT);
+    }
+  };
+  const int EL = 5, ER = 11, EY = 6, MY = 10;
+  if (mood == 3) {
+    const P f[] = {{EL,EY+1},{EL+1,EY+1},{ER,EY+1},{ER+1,EY+1},{8,MY},{9,MY}};
+    feat(f, 6);
+  } else if (mood == 6) {
+    const P f[] = {{EL,EY+1},{EL+1,EY},{EL+2,EY+1},{ER-1,EY+1},{ER,EY},
+                   {ER+1,EY+1},{7,MY},{8,MY+1},{9,MY+1},{10,MY}};
+    feat(f, 10);
+  } else if (mood == 2) {
+    const P f[] = {{EL,EY},{EL+1,EY},{ER,EY},{ER+1,EY},{EL,EY+1},{EL+1,EY+1},
+                   {ER,EY+1},{ER+1,EY+1},{8,MY},{8,MY+1}};
+    feat(f, 10);
+  } else if (mood == 5) {
+    P f[12]; int n = 0;
+    for (int b = 0; b < 2; b++) {
+      int bx = (b ? ER : EL) - 1;
+      f[n++] = {bx, EY-1}; f[n++] = {bx+2, EY-1}; f[n++] = {bx+1, EY};
+      f[n++] = {bx, EY+1}; f[n++] = {bx+2, EY+1};
+    }
+    f[n++] = {8, MY+1}; f[n++] = {9, MY+1};
+    feat(f, n);
+  } else {
+    const P f[] = {{EL,EY},{EL+1,EY},{ER,EY},{ER+1,EY},{8,MY},{9,MY}};
+    feat(f, 6);
+  }
+  (void)frame;
+}
+
+// ---- candle: height is the gauge; a candle burns down ----------------------
+static void avCandle(int mood, int frame) {
+  const int left = 7, w = 4, base = K_ROWS - 2;
+  int h = 1 + (int)lroundf(9.0f * avFrac());
+  int top = base - h;
+  for (int c = left - 2; c < left + w + 2; c++) avCell(c, base, C_WAX_D);
+  avCell(left - 1, base + 1, C_WAX_D, w + 2, 1);
+  for (int r = top; r < base; r++)
+    for (int c = left; c < left + w; c++)
+      avCell(c, r, c < left + w - 1 ? C_WAX : C_WAX_D);
+  // Drips: more of them the further down it has burned.
+  int drips = (int)((1.0f - avFrac()) * 3.0f);
+  for (int i = 0; i < drips; i++)
+    if (top + 1 + i * 2 < base) avCell(left + w - 1, top + 1 + i * 2, C_WAX);
+  if (mood == 5) {                       // out: no flame, a wisp of smoke
+    avCell(left + 1, top - 1, C_MUTED);
+    avCell(left + 2, top - 2, C_MUTED);
+    avCell(left + 1, top - 3, C_MUTED);
+    return;
+  }
+  // The flame flickers by one cell. That is the only motion the object needs:
+  // a candle that bounced would read as a cartoon rather than a candle.
+  int fl = (frame % 2) ? 1 : 0;
+  avCell(left + 1, top - 1, C_OUT);      // wick
+  uint16_t tip = mood == 2 ? C_CRIT : (mood == 3 ? C_ACC : C_WARN);
+  avCell(left + 1, top - 2, tip);
+  avCell(left + 2 - fl, top - 2, tip);
+  avCell(left + 1, top - 3, mood == 2 ? C_CRIT : C_WARN);
+  if (mood == 6) { avCell(left + 2, top - 4, C_ACC); avCell(left, top - 3, C_ACC); }
+  int ey = top + 2;
+  if (ey < base - 1) {
+    avCell(left, ey, C_OUT); avCell(left + 2, ey, C_OUT);
+    if (mood != 3 && ey + 2 < base) avCell(left + 1, ey + 2, C_OUT);
+  }
+}
+
+// ---- plant: stem height and leaf pairs move together -----------------------
+static void avPlant(int mood, int frame) {
+  const int rim = K_ROWS - 5;
+  float f = avFrac();
+  for (int c = 4; c < 14; c++) avCell(c, rim, C_SPRK_D);
+  for (int i = 0, r = rim + 1; r < K_ROWS - 1; r++, i++)
+    for (int c = 5 + i / 2; c < 13 - i / 2; c++) avCell(c, r, C_SPRK);
+  for (int c = 5; c < 13; c++) avCell(c, rim - 1, f > 0.0f ? C_LEAF_D : C_SPRK_D);
+  int h = (int)lroundf(8.0f * f);
+  int sway = (mood == 6 && frame % 4 < 2) ? 1 : 0;
+  uint16_t col = (mood == 5 || f <= 0.0f) ? C_LEAF_D : C_LEAF;
+  for (int i = 0; i < h; i++) {
+    int r = rim - 2 - i;
+    if (r < 0) break;
+    avCell(8 + (i > h / 2 ? sway : 0), r, col);
+  }
+  int pairs = (int)(f * 3.99f);
+  for (int pr = 0; pr < pairs; pr++) {
+    int r = rim - 3 - pr * 3;
+    if (r < 1) break;
+    for (int dx = 1; dx <= 2; dx++) { avCell(8 + dx, r, col); avCell(8 - dx, r + 1, col); }
+  }
+  if (mood == 6 && f > 0.7f) avCell(8 + sway, rim - 2 - h, C_ACC);   // a bud
+  if (f <= 0.0f) { avCell(12, rim, C_LEAF_D); avCell(13, rim, C_LEAF_D); }
+  // A face on the pot -- the pot is there whatever the stem is doing, and two
+  // pale eyes alone on terracotta read as teeth, so it always gets a mouth.
+  int fy = rim + 2;
+  if (mood == 5 || f <= 0.0f) {
+    avCell(7, fy - 1, C_WAX); avCell(7, fy, C_WAX);
+    avCell(10, fy - 1, C_WAX); avCell(10, fy, C_WAX);
+    avCell(8, fy + 1, C_WAX, 2, 1);
+  } else {
+    avCell(7, fy, C_WAX); avCell(10, fy, C_WAX);
+    avCell(8, fy + 1, C_WAX, mood == 2 ? 1 : 2, 1);
+  }
+}
+
+// ---- cat: the character is constant, the ball of yarn is the gauge ---------
+static void avCat(int mood, int frame) {
+  // Drawn from a sprite rather than assembled from loops: at eleven cells the
+  // ears and tail are two or three pixels each, and deriving them produced a
+  // round-eared blob with no silhouette.
+  static const char *const CAT[11] = {
+      "..K.....K..", ".KSK...KSK.", ".KBSK.KSBK.", ".KBBKKKBBK.",
+      "KBBBBBBBBBK", "KBBBBBBBBBK", "KBBBBBBBBBK", ".KBBBBBBBK.",
+      ".KBBBBBBBK.", "KBBBBBBBBBK", ".KKKKKKKKK."};
+  const int cx0 = 1, cy0 = K_ROWS - 11 - 1;
+  for (int r = 0; r < 11; r++)
+    for (int c = 0; c < 11; c++) {
+      uint16_t col = 0;
+      switch (CAT[r][c]) {
+        case 'K': col = C_OUT;    break;
+        case 'B': col = C_SPRK;   break;
+        case 'S': col = C_SPRK_D; break;
+        case 'W': col = C_FACE;   break;
+        default: continue;
+      }
+      avCell(cx0 + c, cy0 + r, col);
+    }
+  // Tail, curling up beside the yarn rather than under it -- drawn where the
+  // ball lands, it was simply painted over.
+  avCell(cx0 + 10, cy0 + 9, C_SPRK_D); avCell(cx0 + 11, cy0 + 9, C_SPRK_D);
+  avCell(cx0 + 11, cy0 + 8, C_SPRK_D); avCell(cx0 + 11, cy0 + 7, C_SPRK_D);
+  int ey = cy0 + 5, ex1 = cx0 + 3, ex2 = cx0 + 7;
+  if (mood == 5) {
+    avCell(ex1, ey - 1, C_OUT); avCell(ex1, ey + 1, C_OUT);
+    avCell(ex2, ey - 1, C_OUT); avCell(ex2, ey + 1, C_OUT);
+  } else if (mood == 2) {
+    avCell(ex1, ey - 1, C_FACE, 1, 2); avCell(ex2, ey - 1, C_FACE, 1, 2);
+    avCell(ex1, ey, C_OUT); avCell(ex2, ey, C_OUT);
+  } else {
+    avCell(ex1, ey, C_OUT); avCell(ex2, ey, C_OUT);
+  }
+  avCell(cx0 + 5, ey + 1, C_ACC);                       // nose
+  if (mood == 6) { avCell(cx0 + 4, ey + 2, C_OUT); avCell(cx0 + 6, ey + 2, C_OUT); }
+  // The gauge. Round at every size -- chamfering the corners looked right at
+  // five cells and turned three and four into diamonds.
+  int size = 1 + (int)lroundf(4.0f * avFrac());
+  int bx = 13, by = K_ROWS - 1 - size;
+  float rad = size / 2.0f, mid = (size - 1) / 2.0f;
+  for (int r = 0; r < size; r++)
+    for (int c = 0; c < size; c++) {
+      if (size >= 3) {
+        float dx = c - mid, dy = r - mid;
+        if (dx * dx + dy * dy > rad * rad) continue;
+      }
+      avCell(bx + c, by + r, ((r + c) % 2 == 0) ? C_SPRK : C_SPRK_D);
+    }
+  (void)frame;
+}
+
+// Fill the grid for whichever avatar is selected.
+static void avRender(int mood, int frame) {
+  avClear();
+  switch (uiAvatar) {
+    case AV_MOON:   avMoon(mood, frame);   break;
+    case AV_CANDLE: avCandle(mood, frame); break;
+    case AV_PLANT:  avPlant(mood, frame);  break;
+    case AV_CAT:    avCat(mood, frame);    break;
+    default: break;
+  }
+}
+
+// One entry point for the screen: the kitsune keeps its own renderer, the rest
+// go through the grid.
+static void drawAvatarAnim(int mood, int frame) {
+  if (uiAvatar == AV_KITSUNE) { drawKitsuneAnim(mood, frame); return; }
+  avRender(mood, frame);
+  const int S = kitsuneCell();
+  const int ox = offX + (mapLen(REF_W) - K_COLS * S) / 2, oy0 = mapY(40);
+  int bob = 0;
+  if      (mood == 6) bob = (frame % 4 < 2) ? -4 : 0;
+  else if (mood == 3) bob = (frame % 8 < 4) ? 0 : 3;
+  else if (mood == 5) bob = 4;
+  for (int r = 0; r < K_ROWS; r++)
+    for (int c = 0; c < K_COLS; c++)
+      gfx->fillRect(ox + c * S, oy0 + bob + r * S, S, S,
+                    avGrid[r][c] ? avGrid[r][c] : C_BG);
+}
+
 // Full kitsune screen, rendered into the off-screen buffer and blitted in one
 // pass (no flicker). Draw helpers all use the global `gfx`, so we point it at
 // the RAM canvas for the duration, then flush. Every animation frame is a full
@@ -1248,7 +1510,7 @@ static void drawMascot() {
     fmtCountdown(windows[idx].resets_at, buf, sizeof(buf));
     if (buf[0]) drawCentered(buf, cy + 42, 1, C_MUTED);
   }
-  drawKitsuneAnim(mood, mascotFrame);
+  drawAvatarAnim(mood, mascotFrame);
 
   if (mascotBuf) { gfx = real; mascotBuf->flush(); }   // blit the finished frame
 }
@@ -1750,6 +2012,7 @@ static void handleStatus() {
   doc["self_hosted"] = selfHosted;
   doc["board"] = BOARD_SLUG;          // which panel this build drives
   doc["theme"] = THEME_NAMES[uiTheme < 0 ? 0 : uiTheme];
+  doc["avatar"] = AVATAR_NAMES[uiAvatar];
   doc["plan"] = plan[0] ? plan : (const char *)nullptr;
   // Why the last poll said what it said, and how the release check is faring.
   // Both were previously visible only on the board's own screen, which makes a
@@ -2146,6 +2409,8 @@ static void loadCreds() {
   strlcpy(plan, prefs.getString("plan", "").c_str(), sizeof(plan));
   showUsed   = prefs.getBool("used", false);
   applyTheme(prefs.getInt("theme", DEFAULT_THEME));
+  uiAvatar = prefs.getInt("avatar", AV_KITSUNE);
+  if (uiAvatar < 0 || uiAvatar >= AV_COUNT) uiAvatar = AV_KITSUNE;
   ntfyTopic  = prefs.getString("ntfy", "");
   poToken    = prefs.getString("potok", "");
   poUser     = prefs.getString("pouser", "");
@@ -3064,6 +3329,15 @@ static void handleSettingsPage() {
     if (i == uiTheme) s += " selected";
     s += ">"; s += THEME_NAMES[i]; s += "</option>";
   }
+  s += F("</select><label>Avatar</label><select name=avatar>");
+  for (int i = 0; i < AV_COUNT; i++) {
+    s += "<option value="; s += i;
+    if (i == uiAvatar) s += " selected";
+    s += ">"; s += AVATAR_NAMES[i];
+    // The gauge, not just the name. Every one of these shows headroom in its
+    // own way, and which way is the actual choice being made here.
+    s += " &mdash; "; s += AVATAR_GAUGE[i]; s += "</option>";
+  }
   s += F("</select>"
          "<p class=muted>Dim suits an always-on AMOLED, where an unlit pixel "
          "emits nothing and the accents otherwise run at full brightness. "
@@ -3126,6 +3400,13 @@ static void handleSettingsSave() {
       prefs.putInt("theme", uiTheme);   // inside the open prefs transaction
     }
   }
+  if (server->hasArg("avatar")) {
+    int a = server->arg("avatar").toInt();
+    if (a >= 0 && a < AV_COUNT && a != uiAvatar) {
+      uiAvatar = a;
+      prefs.putInt("avatar", uiAvatar);
+    }
+  }
   if (server->hasArg("ptok")) {
     String t = server->arg("ptok");
     t.trim();
@@ -3182,6 +3463,32 @@ static String kitsuneSvg(int px) {
   return s;
 }
 
+// The chosen avatar as SVG. The kitsune has its own composer above; the rest
+// come from the same cell grid the panel draws, so the page and the glass can
+// never disagree about what the board is wearing.
+static String avatarSvg(int px) {
+  if (uiAvatar == AV_KITSUNE) return kitsuneSvg(px);
+  avRender(mascotMoodNow(), 0);
+  String s = "<svg width="; s += px; s += " height="; s += (px * K_ROWS) / K_COLS;
+  s += " viewBox='0 0 18 15' shape-rendering=crispEdges style='display:block'>";
+  char hex[10];
+  for (int y = 0; y < K_ROWS; y++)
+    for (int x = 0; x < K_COLS; x++) {
+      uint16_t v = avGrid[y][x];
+      if (!v) continue;                       // background stays transparent
+      // Back out of RGB565. Lossy, but the alternative is a second palette
+      // kept in step by hand, which is the kind of thing that silently drifts.
+      snprintf(hex, sizeof(hex), "#%02X%02X%02X",
+               (unsigned)(((v >> 11) & 0x1F) * 255 / 31),
+               (unsigned)(((v >> 5) & 0x3F) * 255 / 63),
+               (unsigned)((v & 0x1F) * 255 / 31));
+      s += "<rect x="; s += x; s += " y="; s += y;
+      s += " width=1 height=1 fill='"; s += hex; s += "'/>";
+    }
+  s += "</svg>";
+  return s;
+}
+
 static void handleRoot() {
   String ip = WiFi.localIP().toString();
   const char *st = selfHosted ? "Running self-contained"
@@ -3209,7 +3516,7 @@ static void handleRoot() {
       "</head><body>"
       "<div class=card style='display:flex;align-items:center;gap:14px'>"
       "<div class=ava>");
-  s += kitsuneSvg(52);
+  s += avatarSvg(52);
   s += F("</div><div><h1 style='margin:0 0 5px'>Yoyu"
          "<span class=jp lang=ja>\u3088\u3086\u3046</span></h1><span class=pill>");
   s += st;
