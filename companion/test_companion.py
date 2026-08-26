@@ -710,6 +710,33 @@ class CreditsFromUsageTests(unittest.TestCase):
         self.assertIsNone(companion.credits_from_usage(
             {"spend": {"enabled": True, "used": {"amount_minor": "lots"}}}))
 
+    def test_internal_codename_windows_are_not_shown(self):
+        # nimbus_quill and friends come back beside the real windows. A board
+        # with three meter slots was spending one on "Nimbus Quill 0%".
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T00:00:00Z"},
+            "nimbus_quill": {"utilization": 0.0, "resets_at": None},
+            "tangelo": {"utilization": 0.0, "resets_at": None},
+        })]
+        self.assertEqual(keys, ["five_hour"])
+
+    def test_an_unknown_window_with_a_reset_time_still_shows(self):
+        # The seven_day_<model> case this code already goes out of its way to
+        # handle: a model Anthropic ships later must not be filtered away.
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "seven_day_newmodel": {"utilization": 0.0,
+                                   "resets_at": "2026-08-27T00:00:00Z"},
+        })]
+        self.assertEqual(keys, ["seven_day_newmodel"])
+
+    def test_an_unknown_window_being_used_still_shows(self):
+        # No reset time but real usage on it: that is a limit doing something,
+        # and hiding it would hide the thing the board exists to report.
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "mystery": {"utilization": 42.0, "resets_at": None},
+        })]
+        self.assertEqual(keys, ["mystery"])
+
     def test_a_missing_cap_still_reports_what_was_spent(self):
         raw = {"spend": {"enabled": True, "percent": None, "severity": "normal",
                          "used": {"amount_minor": 512, "currency": "GBP",

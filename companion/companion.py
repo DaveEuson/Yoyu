@@ -247,6 +247,24 @@ def windows_from_usage(raw):
         util = value.get("utilization")
         if util is None:
             continue
+        # Skip entries that are both unrecognised and information-free.
+        #
+        # The endpoint returns internal codenames alongside the real windows --
+        # nimbus_quill, tangelo, amber_ladder, cinder_cove and friends -- and
+        # _window_label happily Title-Cases them, so a board with three meter
+        # slots was spending one on "Nimbus Quill 0%". That says nothing to
+        # anyone and crowds out a window that does.
+        #
+        # Deliberately conservative, because guessing wrong hides a real limit.
+        # A window Anthropic actually ships has a reset time; that is what
+        # makes it a window. So a KNOWN key always shows, an unknown key WITH
+        # a reset time shows (the seven_day_<model> case this code already
+        # goes out of its way to handle), and only an unknown key with no
+        # reset and nothing used is dropped.
+        if (key not in WINDOW_LABELS
+                and not (value.get("resets_at") or value.get("resetsAt"))
+                and not util):
+            continue
         try:
             util = max(0.0, min(100.0, float(util)))
         except (TypeError, ValueError):
