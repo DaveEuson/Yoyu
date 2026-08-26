@@ -51,11 +51,24 @@ panel first, and touch works.
 starts on the dimmer theme and draws the same layout bigger rather than fitting
 more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 
-> **Touch does not work on it yet.** The screen is a display, not a control.
-> Screens rotate on their own and everything else is configured from a browser,
-> but you cannot tap it. The panel's controller initialises, reports its own
-> resolution and accepts a switch into normal reporting mode, then never
-> reports a press; that is unsolved, not merely unwritten.
+> **Touch does not work on the unit I have.** The screen is a display, not a
+> control: screens rotate on their own and everything else is configured from a
+> browser, but you cannot tap it.
+>
+> This is **not** a Yoyu bug. Waveshare's own driver, built from their own
+> example library and run on the same board with their own pin definitions,
+> behaves identically — no touch reported, and the controller's interrupt line
+> never asserts once across 40 seconds of pressing. An interrupt is the
+> controller's own response to detecting a finger and happens before any driver
+> reads a register, so the controller is not sensing the panel at all. Every
+> software check passes: right part (`0x9220`), real firmware, valid check
+> code, correct resolution, mode unlock confirmed.
+>
+> That points at the touch digitiser's connection to the controller. If you hit
+> this, **reseat the touch FPC ribbon** on the back of the panel before
+> anything else — it is the common cause and it travels loose. If that does not
+> fix it, the board needs replacing; no driver change will help.
+> [Details](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
 
