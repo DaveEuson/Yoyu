@@ -3372,7 +3372,18 @@ static const uint16_t CST_REG_TOUCH = 0xD000;
 static const uint16_t CST_REG_DEBUG  = 0xD101;
 static const uint16_t CST_REG_NORMAL = 0xD109;
 static const uint16_t CST_REG_MODE_RB = 0x0002;   // echoes the mode just set
+// Unlocks mode setting. The chip will not act on a work-mode write that has
+// not been preceded by this, and -- this is the trap -- it echoes the mode you
+// asked for at 0x0002 either way. So writing 0xD109 cold looks exactly like
+// success: the read-back says 0x09, and the part carries on not scanning.
+static const uint16_t CST_REG_MODESET = 0xD11E;
 static const uint16_t CST_REG_CHECK = 0xD1FC;
+// Firmware version and its checksum. The vendor driver refuses the part
+// outright when the version reads back as 0xA5A5A5A5 -- that is what a CST92xx
+// says when it has no firmware loaded at all. Such a chip still answers its
+// address, still reports the resolution held in ROM and still accepts a mode
+// write; it simply never scans the panel. Every symptom we have.
+static const uint16_t CST_REG_FWVER = 0xD208;
 static const uint16_t CST_REG_RES   = 0xD1F8;
 static const uint16_t CST_REG_INFO  = 0xD204;
 static const uint8_t  CST_ACK       = 0xAB;   // written back to release a report
@@ -3385,6 +3396,43 @@ static const uint8_t  CST_DATA_LEN  = 15;     // 2 points x 5 bytes + 5 header
 // Wake it and confirm it is the part we think it is. Without the command-mode
 // write the chip acknowledges its address and returns nothing but zeroes
 // forever, which looks exactly like a screen nobody is touching.
+// Ask the controller to change work mode, the way its own driver does.
+//
+// Entering debug mode to read the info registers is a plain write; coming back
+// out to normal reporting is not. The mode has to be unlocked first with
+// 0xD11E, written twice, and the chip confirms the unlock by echoing 0x1E at
+// 0x0002. Only then does a work-mode write take. Skipping it is silent: the
+// mode read-back still returns whatever you asked for.
+static bool cstSetMode(uint16_t modeReg) {
+  uint8_t buf[4];
+  bool unlocked = false;
+  for (int i = 0; i < 3 && !unlocked; i++) {
+    // Twice, deliberately. The vendor writes this register two times in a row
+    // before reading the confirmation back.
+    if (!i2cWrite16(TOUCH_ADDR, CST_REG_MODESET, buf, 0) ||
+        !i2cWrite16(TOUCH_ADDR, CST_REG_MODESET, buf, 0) ||
+        !i2cRead16(TOUCH_ADDR, CST_REG_MODE_RB, buf, 4)) {
+      delay(200);
+      continue;
+    }
+    unlocked = (buf[1] == 0x1E);
+    if (!unlocked) delay(200);
+  }
+  if (!unlocked) {
+    // Worth saying out loud rather than pressing on quietly: every symptom of
+    // a chip that never got unlocked looks like a chip that is working.
+    Serial.println(F("[touch] mode unlock (0xD11E) never confirmed"));
+  }
+  if (!i2cWrite16(TOUCH_ADDR, modeReg, buf, 0)) return false;
+  if (!i2cRead16(TOUCH_ADDR, CST_REG_MODE_RB, buf, 2)) return false;
+  uint8_t want = (uint8_t)(modeReg & 0xFF);
+  Serial.printf("[touch] work mode -> 0x%02X (wanted 0x%02X)%s\n",
+                buf[1], want, unlocked ? "" : "  [not unlocked]");
+  if (buf[1] != want) return false;
+  delay(10);
+  return true;
+}
+
 static bool cstBegin() {
   // The exact order the vendor's own driver walks. The two reads in the middle
   // are not curiosity: writing command mode and then jumping straight to touch
@@ -3401,23 +3449,52 @@ static bool cstBegin() {
   int rw = (int)buf[1] << 8 | buf[0];
   int rh = (int)buf[3] << 8 | buf[2];
   if (!i2cRead16(TOUCH_ADDR, CST_REG_INFO, buf, 4)) return false;
-  uint16_t id = (uint16_t)buf[1] << 8 | buf[0];
+  // Chip type is the HIGH pair and the project id the low one -- not the other
+  // way round. Reading the low pair and calling it the id meant the number
+  // printed at boot was the project id, so the part was never actually
+  // identified; it just looked as though it had been.
+  uint16_t chipType  = (uint16_t)buf[3] << 8 | buf[2];
+  uint16_t projectId = (uint16_t)buf[1] << 8 | buf[0];
   // Resolution is the honest check that this is a conversation rather than
   // noise: it should come back as the panel's own size.
-  Serial.printf("[touch] checkcode %08lX  id 0x%04X  reports %dx%d\n",
-                (unsigned long)check, id, rw, rh);
+  Serial.printf("[touch] checkcode %08lX  chip 0x%04X  project 0x%04X  "
+                "reports %dx%d\n",
+                (unsigned long)check, chipType, projectId, rw, rh);
+
+  uint8_t fw[8];
+  if (i2cRead16(TOUCH_ADDR, CST_REG_FWVER, fw, 8)) {
+    uint32_t fwVer = (uint32_t)fw[3] << 24 | (uint32_t)fw[2] << 16 |
+                     (uint32_t)fw[1] << 8 | fw[0];
+    uint32_t sum   = (uint32_t)fw[7] << 24 | (uint32_t)fw[6] << 16 |
+                     (uint32_t)fw[5] << 8 | fw[4];
+    Serial.printf("[touch] fw %08lX  checksum %08lX\n",
+                  (unsigned long)fwVer, (unsigned long)sum);
+    // The three checks the vendor's own driver makes before it will use the
+    // part. Each names a different failure, and none of them were being made:
+    // an unprogrammed chip, a garbled info block, and the wrong part entirely
+    // all presented here as "initialises fine, never reports a press".
+    if (fwVer == 0xA5A5A5A5UL) {
+      Serial.println(F("[touch] this controller has NO FIRMWARE loaded -- it "
+                       "will answer I2C and never scan the panel"));
+      return false;
+    }
+    if ((check & 0xFFFF0000UL) != 0xCACA0000UL) {
+      Serial.printf("[touch] firmware info block looks wrong (checkcode high "
+                    "half %04lX, expected CACA)\n",
+                    (unsigned long)(check >> 16));
+      return false;
+    }
+  }
+  if (chipType != 0x9220 && chipType != 0x9217) {
+    Serial.printf("[touch] unexpected chip type 0x%04X (want 9220 or 9217)\n",
+                  chipType);
+    return false;
+  }
 
   // Leave debug mode. Everything above was read from it; nothing below works
-  // until the chip is put back to reporting touches.
-  if (!i2cWrite16(TOUCH_ADDR, CST_REG_NORMAL, buf, 0)) return false;
-  delay(10);
-  // The chip echoes the mode it settled into, so this is checkable rather than
-  // hopeful: the low byte should come back as the one just written.
-  if (i2cRead16(TOUCH_ADDR, CST_REG_MODE_RB, buf, 2)) {
-    Serial.printf("[touch] work mode -> 0x%02X (wanted 0x%02X)\n",
-                  buf[1], (uint8_t)(CST_REG_NORMAL & 0xFF));
-  }
-  return true;
+  // until the chip is put back to reporting touches -- and that takes the
+  // unlock, not just the write.
+  return cstSetMode(CST_REG_NORMAL);
 }
 
 // One press, start to finish. The gesture codes match the CST816D's so that
