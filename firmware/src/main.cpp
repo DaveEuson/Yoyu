@@ -275,6 +275,10 @@ static const char *const AVATAR_GAUGE[AV_COUNT] = {
     "tails fan out", "phase waxes", "burns down", "grows", "ball of yarn"};
 static int uiAvatar = AV_KITSUNE;
 
+#ifndef HAS_BATTERY_PMIC
+#define HAS_BATTERY_PMIC 0
+#endif
+
 static const int K_COLS = 18, K_ROWS = 15;
 static const int K_CELL = 13;   // px per cell at uiScale 1
 
@@ -681,8 +685,56 @@ static void drawSplash(const char *line1, const char *line2) {
 // reading off a pin that means something else there. batPct -1 is the value the
 // rest of the UI already treats as "no battery", so the glyph simply never
 // draws -- no second code path to keep in step.
+#if HAS_BATTERY_PMIC
+// The AXP2101's own fuel gauge, read directly. Three registers and no library:
+// XPowersLib is a fine thing but it brings a class hierarchy and four other
+// chips along for what is, here, one byte of percentage.
+//
+// STATUS1 bit 3 says a cell is attached, STATUS2's top bits say whether it is
+// charging, and 0xA4 is the gauge's own reading -- which beats fitting a
+// voltage curve by hand the way the ADC board has to.
+static bool pmicRead(uint8_t reg, uint8_t &out) {
+  Wire.beginTransmission(PMIC_ADDR);
+  Wire.write(reg);
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom((int)PMIC_ADDR, 1) != 1) return false;
+  out = Wire.read();
+  return true;
+}
+
+static void pmicEnableGauge() {
+  uint8_t v;
+  if (!pmicRead(0x18, v)) { Serial.println(F("[pmic] not responding")); return; }
+  Wire.beginTransmission(PMIC_ADDR);
+  Wire.write(0x18);
+  Wire.write(v | (1 << 3));                // gauge on
+  Wire.endTransmission();
+  // Say which chip answered and what it thinks the battery is doing. Without
+  // this, "no battery" and "the PMIC never answered" both surface as a blank
+  // gauge and a null in /api/status -- indistinguishable, and only one of them
+  // is a fault.
+  uint8_t id = 0, st1 = 0, pct = 0;
+  pmicRead(0x03, id);                      // IC type: 0x4A on an AXP2101
+  pmicRead(0x00, st1);
+  pmicRead(0xA4, pct);
+  Serial.printf("[pmic] id 0x%02X  battery %s  gauge %u%%\n",
+                id, (st1 & (1 << 3)) ? "present" : "absent", pct);
+}
+#endif
+
 static void readBattery() {
-#if !HAS_BATTERY_ADC
+#if HAS_BATTERY_PMIC
+  uint8_t st1, st2, pct;
+  if (!pmicRead(0x00, st1) || !(st1 & (1 << 3))) {   // no cell attached
+    batPct = -1;
+    batCharging = false;
+    return;
+  }
+  batCharging = pmicRead(0x01, st2) && ((st2 >> 5) == 0x01);
+  if (!pmicRead(0xA4, pct)) { batPct = -1; return; }
+  batPct = pct > 100 ? 100 : pct;
+  return;
+#elif !HAS_BATTERY_ADC
   batPct = -1;
   batCharging = false;
   return;
@@ -2023,6 +2075,15 @@ static void handleStatus() {
   // onto a dark panel looks identical, over the network, to one that is fine.
   doc["screen_off"] = screenOff;
   doc["backlight"] = backlight;
+  // Same reasoning as poll_status above: the gauge was drawn on the glass and
+  // nowhere else, so "is it running on battery, and how flat" could only be
+  // answered by walking over and looking. null when there is no cell.
+  if (batPct >= 0) {
+    doc["battery"] = batPct;
+    doc["charging"] = batCharging;
+  } else {
+    doc["battery"] = (const char *)nullptr;
+  }
   doc["pairing"] = pairingActive();
   JsonObject rc = doc["release_check"].to<JsonObject>();
   rc["ok"]          = tagFetchOk;
@@ -3954,6 +4015,11 @@ static void sensorsBegin() {
   }
   Serial.printf("[i2c] %d device(s); expecting touch 0x%02X, imu 0x%02X/0x%02X\n",
                 found, TOUCH_ADDR, IMU_ADDR_A, IMU_ADDR_B);
+#if HAS_BATTERY_PMIC
+  // Enable the fuel gauge before the first read; a chip that has never been
+  // asked to count reports zero, which looks exactly like a flat battery.
+  pmicEnableGauge();
+#endif
   Wire.beginTransmission(TOUCH_ADDR);
   touchOk = (Wire.endTransmission() == 0);
 #if !TOUCH_IS_CST816
