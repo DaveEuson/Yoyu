@@ -585,5 +585,63 @@ class ResolveTargetsTests(_QuietTest):
         self.assertEqual(self.saved, [])
 
 
+class DisconnectTests(_QuietTest):
+    """Disconnect has to forget the key at this end too.
+
+    The board revokes its own on disconnect, so a copy left here is dead
+    weight that surfaces later as a puzzling refusal rather than as anything
+    actionable.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.keys = {"ab12cd": "k", "http://other:8080": "z"}
+        self.posted = []
+        companion._ID_CACHE.clear()
+        self.addCleanup(companion._ID_CACHE.clear)
+
+        class Resp:
+            status = 200
+            def __enter__(self_): return self_
+            def __exit__(self_, *a): return False
+
+        for name, repl in (
+                ("_topup_keys", lambda: dict(self.keys)),
+                ("board_id", lambda u, refresh=False: "ab12cd"),
+                ("_merge_config", lambda **f: (self.keys.clear(),
+                                               self.keys.update(f["topup_keys"]))[0])):
+            orig = getattr(companion, name)
+            setattr(companion, name, repl)
+            self.addCleanup(setattr, companion, name, orig)
+
+        def fake_open(req, timeout=0):
+            self.posted.append((req.full_url, req.get_method()))
+            return Resp()
+        orig = companion.urllib.request.urlopen
+        companion.urllib.request.urlopen = fake_open
+        self.addCleanup(setattr, companion.urllib.request, "urlopen", orig)
+
+    def test_posts_to_the_boards_disconnect_endpoint(self):
+        self.assertTrue(companion.disconnect_board("http://b:8080"))
+        self.assertEqual(self.posted, [("http://b:8080/disconnect", "POST")])
+
+    def test_drops_this_computers_key_for_that_board(self):
+        companion.disconnect_board("http://b:8080")
+        self.assertNotIn("ab12cd", self.keys)
+
+    def test_leaves_other_boards_keys_alone(self):
+        companion.disconnect_board("http://b:8080")
+        self.assertEqual(self.keys, {"http://other:8080": "z"})
+
+    def test_an_unreachable_board_keeps_its_key(self):
+        # Forgetting the key because the board happened to be off would force a
+        # re-pair for a temporary outage.
+        def boom(req, timeout=0):
+            raise companion.urllib.error.URLError("down")
+        companion.urllib.request.urlopen = boom
+        self.assertFalse(companion.disconnect_board("http://b:8080"))
+        self.assertIn("ab12cd", self.keys)
+
+
 if __name__ == "__main__":
     unittest.main()
