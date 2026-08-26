@@ -127,6 +127,45 @@ new one exits to avoid double-polling.
 
 ---
 
+## Touch does nothing on the AMOLED board
+
+**Reseat the touch ribbon first.** On the unit this was diagnosed on, the
+controller was never sensing the panel, and the flat-flex connector between the
+touch digitiser and the controller is the thing most likely to be at fault —
+they travel loose. Everything else here is what to check if that does not fix
+it.
+
+**It is not a firmware bug, and this was tested rather than assumed.**
+Waveshare's own driver — their `SensorLib` `TouchDrvCST92xx`, built from their
+own example library, run on the same board with their own pin definitions and
+no Yoyu code involved — reports no touch either.
+
+The decisive detail is the **interrupt line**. Across 40 seconds of pressing,
+`TP_INT` (GPIO 11) never went low, not once. That interrupt is the controller's
+own hardware response to detecting a finger; it fires before any driver reads a
+register, so no amount of register parsing can explain its absence. The
+controller is not detecting the touch in the first place.
+
+Every software-side check passes on that board:
+
+| Check | Result |
+|---|---|
+| I²C address | `0x5A`, answers |
+| Chip type (`0xD204` high pair) | `0x9220` — a real CST9220 |
+| Firmware version | `01000006` — not `0xA5A5A5A5`, so it *is* programmed |
+| Check code | `CACA4E20` — correct `CACA` marker |
+| Reported resolution | 480×480 |
+| Work-mode unlock (`0xD11E`) | confirmed, echoes `0x1E` |
+| Pins vs Waveshare's `pin_config.h` | SDA 15, SCL 14, INT 11, RST 40 — all match |
+
+So: right part, programmed, correctly addressed, in a confirmed normal
+reporting mode, and still silent. If reseating the ribbon does not bring it
+back, the panel or its controller is faulty and the board needs replacing.
+
+The LCD board is unaffected — touch works there normally.
+
+---
+
 ## The companion can't find the board at all
 
 **Checklist:**
