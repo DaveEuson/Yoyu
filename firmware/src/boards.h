@@ -107,9 +107,16 @@
 // ESPHome's cst9220 component -- Hynitron publish no datasheet.
 #define TOUCH_IS_CST816   0
 
-// UNVERIFIED: no battery divider is documented for this board. Left off rather
-// than guessed; the gauge already hides itself when there is no reading.
+// This board has no battery divider on an ADC pin, and looking for one was
+// the wrong question: it carries an AXP2101 power-management chip that already
+// measures the cell and keeps a fuel gauge. Confirmed on the bus at 0x34, and
+// it is what Waveshare's own 03_LVGL_AXP2101_ADC_Data example talks to.
+//
+// So the ADC path stays off and the PMIC path answers instead -- a percentage
+// straight from the gauge, rather than a voltage curve fitted by hand.
 #define HAS_BATTERY_ADC   0
+#define HAS_BATTERY_PMIC  1
+#define PMIC_ADDR         0x34   // AXP2101
 
 // An AMOLED has no such floor: an unlit pixel emits nothing, so the accents
 // run at full blast against true black and the first impression of the panel

@@ -841,6 +841,36 @@ def resolve_targets(saved, rescan=False):
     return urls
 
 
+def disconnect_board(url, token=""):
+    """Clear a board's Claude login, and forget our key for it.
+
+    The board revokes its own top-up key when it disconnects, so a key left
+    lying here is dead weight that would only produce a confusing refusal on
+    the next cycle. Both ends forget together or neither does.
+    """
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    if token:
+        headers["X-Push-Token"] = token
+    try:
+        req = urllib.request.Request(url.rstrip("/") + "/disconnect", data=b"",
+                                     headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            ok = resp.status == 200
+    except urllib.error.HTTPError as exc:
+        print("The board refused: HTTP %s%s" % (
+            exc.code, " (needs the device token: --token)" if exc.code == 401 else ""),
+            file=sys.stderr)
+        return False
+    except (urllib.error.URLError, OSError) as exc:
+        print("Couldn't reach the board at %s: %s" % (url, exc), file=sys.stderr)
+        return False
+    drop_topup_key(url)
+    _ID_CACHE.pop(url.rstrip("/"), None)
+    print("Disconnected %s. Its Claude login is cleared and the top-up key is "
+          "revoked; pairing again issues a new one." % url)
+    return ok
+
+
 def _merge_config(**fields):
     path = _config_path()
     data = {}
@@ -1517,6 +1547,9 @@ def _single_instance():
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser(description="Yoyu companion")
+    ap.add_argument("--disconnect", nargs="?", const=True, metavar="URL",
+                    help="clear a board's Claude login and forget its top-up "
+                         "key (the reverse of --pair)")
     ap.add_argument("--rescan", action="store_true",
                     help="look for boards again even if the saved ones answer "
                          "-- use after adding a second board")
@@ -1576,6 +1609,14 @@ def main():
               "3 minutes.")
         print(f"Finish with:  companion.py --pair {url} --pair-code <CODE>")
         return
+
+    if args.disconnect:
+        url = args.disconnect if isinstance(args.disconnect, str) else (
+            cfg.get("pi") or "").split(",")[0].strip() or discover_pi()
+        if not url:
+            ap.error("couldn't find a board to disconnect; pass "
+                     "--disconnect http://<its-address>:8080")
+        sys.exit(0 if disconnect_board(url, args.token or cfg.get("token", "")) else 1)
 
     if args.uninstall:
         removed = uninstall_autostart()

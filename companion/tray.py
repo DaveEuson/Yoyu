@@ -290,6 +290,43 @@ def pair_board(url=None):
     return _cb
 
 
+def disconnect_board(url=None):
+    """Undo pairing from the same menu that offers it.
+
+    Pairing is one click here; unpairing meant finding a page on the board and
+    a grey button at the bottom of it. Confirmed first -- it clears a login.
+    """
+    def _cb(icon, item):
+        def run():
+            target = url or state["url"]
+            if not target:
+                state["status"] = "No board to disconnect"
+                icon.update_menu()
+                return
+            msg = ("Disconnect this board from your Claude account?\n"
+                   "Wi-Fi, theme, avatar and history are kept.")
+            if not _confirm(msg):
+                return
+            ok = companion.disconnect_board(target)
+            state["status"] = ("Disconnected - it no longer holds a login"
+                               if ok else "Disconnect failed")
+            icon.update_menu()
+        threading.Thread(target=run, daemon=True).start()
+    return _cb
+
+
+def _confirm(msg):
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+        ans = messagebox.askyesno("Yoyu", msg)
+        root.destroy()
+        return bool(ans)
+    except Exception:  # noqa: BLE001 - no GUI toolkit: do not act unasked
+        return False
+
+
 def do_rescan(icon, item):
     """Look again. Nothing rediscovers on its own once a saved board answers,
     which is right until the day you plug in a second one."""
@@ -328,6 +365,7 @@ def _board_menu(url):
         pystray.MenuItem("Update firmware…", open_path("/update", url)),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Pair this board", pair_board(url)),
+        pystray.MenuItem("Disconnect from Claude", disconnect_board(url)),
     )
 
 
@@ -407,6 +445,8 @@ def _board_items():
                 for b in boards]
     return [
         pystray.MenuItem("Pair board (run without this computer)", pair_board()),
+        pystray.MenuItem("Disconnect board from Claude", disconnect_board(),
+                         visible=lambda item: bool(state["url"])),
         pystray.MenuItem("Open board page", do_open,
                          enabled=lambda item: bool(state["url"])),
         pystray.MenuItem("Settings", pystray.Menu(

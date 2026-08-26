@@ -15,6 +15,7 @@ no soldering. A second, larger board is supported too — see
   <img src="docs/img/kitsune.jpg" width="30%" alt="The kitsune — one tail left, and the caption reads running low">
 </p>
 <p align="center"><sub>Meters · Focus · the kitsune, down to one tail — tap to cycle</sub></p>
+<p align="center"><sub>The kitsune is one of five characters; the others are a moon, a candle, a plant and a cat.</sub></p>
 
 ## Before you buy: you need Claude Code
 
@@ -64,10 +65,12 @@ more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 > software check passes: right part (`0x9220`), real firmware, valid check
 > code, correct resolution, mode unlock confirmed.
 >
-> That points at the touch digitiser's connection to the controller. If you hit
-> this, **reseat the touch FPC ribbon** on the back of the panel before
-> anything else — it is the common cause and it travels loose. If that does not
-> fix it, the board needs replacing; no driver change will help.
+> The schematic rules out the wiring. Display and touch share one 24-pin FPC at
+> `J40`, the display works through it, and the touch controller answers on I²C
+> through it — so the connector is seated and conducting. Neither the CST9220
+> nor the CO5300 is on the mainboard schematic, so both are bonded to the panel
+> module. The dead link is between the controller and the sensing grid, inside
+> that module. **It is a faulty panel, not a repair and not a driver change.**
 > [Details](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
@@ -102,6 +105,14 @@ If you add a second board later, run `--rescan` or use the tray's **Look for
 boards** — nothing goes looking again on its own while a saved board is still
 answering.
 
+## Turning it off again
+
+Pairing a board takes one click; so does undoing it. **Disconnect from Claude**
+sits in the companion's tray menu beside **Pair board**, and on the board's own
+`/settings` page. It clears the login and revokes the key your computer uses to
+top the board up — Wi-Fi, theme, character, screens and history all stay. From
+the command line: `companion.py --disconnect`.
+
 ## How it gets your usage
 
 - **Companion app (easiest).** A small app on the computer where you use Claude
@@ -123,8 +134,14 @@ answering.
   weekly Opus…), fuel-gauge style — amber under 30% left, red under 10%.
 - **Reset countdowns** and a clock.
 - **Eight screens**, cycled by a tap or on a timer: meters, focus, history,
-  the kitsune, a timer, actions, projects and settings — each one can be
+  your character, a timer, actions, projects and settings — each one can be
   switched off if you don't want it in the rotation.
+- **Five characters**, and each is a gauge rather than a decoration — it shows
+  how much headroom is left in its own way. The **kitsune** fans out one to
+  three tails; the **moon** waxes through its phase; the **candle** burns
+  down; the **plant** grows; the **cat** gets a bigger ball of yarn. Four of
+  the five are continuous, so 47% looks like 47% instead of rounding into a
+  bucket. Pick one on the board's settings page.
 - **Six themes** — Night, Dim, Paper, Mono, Nord and Tokyo Night, set from the
   board's own settings page.
 - **Touch & motion** — tap to cycle screens, long-press to flip % left / %
