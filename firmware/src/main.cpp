@@ -3154,9 +3154,18 @@ static void handleDisconnect() {
   prefs.begin("headroom", false);
   prefs.remove("atok"); prefs.remove("rtok");
   prefs.remove("exp");  prefs.remove("plan");
+  // tkey too. Clearing it only in RAM left it in flash for the next boot to
+  // restore, so a "disconnected" board came back still accepting top-ups from
+  // whatever last paired with it -- and kept a live credential in flash for
+  // anything that could read the chip.
+  prefs.remove("tkey");
   prefs.end();
   nWindows = 0; nWindowsSeen = 0;
-  server->send(200, "text/html", "<p>Disconnected. <a href=/connect>back</a></p>");
+  server->send(200, "text/html",
+               "<p>Disconnected. This board no longer holds a Claude login, and "
+               "the key that let this computer top it up has been revoked -- "
+               "pairing again issues a new one.</p>"
+               "<p><a href=/settings>Back to settings</a></p>");
 }
 
 // ---- /alerts: phone push when usage gets high (ntfy topic / Pushover keys) --
@@ -3353,7 +3362,25 @@ static void handleSettingsPage() {
   s += adminTokenField();
   s += F("<button type=submit>Save</button></form>"
          "<p class=muted>Reset countdowns are timezone-independent. The default "
-         "screen is always shown even if unchecked above.</p></div></body></html>");
+         "screen is always shown even if unchecked above.</p></div>");
+  // Connecting an account takes one click in the companion; disconnecting used
+  // to mean knowing that /connect existed and finding a grey button at the
+  // bottom of it. Anything this easy to switch on belongs somewhere you can
+  // switch it off. Outside the settings <form> above -- HTML forms do not nest.
+  if (selfHosted || accessTok.length()) {
+    s += F("<div class=card><h2>Claude account</h2>"
+           "<p>This board holds a Claude login of its own and reads your usage "
+           "without a computer running.</p>"
+           "<p class=muted>Disconnecting clears that login and revokes the key "
+           "this computer uses to top it up. Wi-Fi, theme, avatar, screens and "
+           "history are untouched. You can pair again at any time.</p>"
+           "<form method=POST action=/disconnect onsubmit=\"return confirm("
+           "'Disconnect this board from your Claude account?')\">");
+    s += adminTokenField();
+    s += F("<button style='background:#8a8577'>Disconnect from Claude</button>"
+           "</form></div>");
+  }
+  s += F("</body></html>");
   server->send(200, "text/html", s);
 }
 
