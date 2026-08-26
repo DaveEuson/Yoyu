@@ -129,11 +129,26 @@ new one exits to avoid double-polling.
 
 ## Touch does nothing on the AMOLED board
 
-**Reseat the touch ribbon first.** On the unit this was diagnosed on, the
-controller was never sensing the panel, and the flat-flex connector between the
-touch digitiser and the controller is the thing most likely to be at fault —
-they travel loose. Everything else here is what to check if that does not fix
-it.
+**This is a faulty panel module, not something you can reseat or reflash.**
+An earlier version of this page said to reseat the touch ribbon first. The
+schematic says otherwise, and the reasoning is worth keeping.
+
+The board has **one** 24-pin FPC at connector `J40` carrying display *and*
+touch: pins 1 and 3 are `LCD0CS` and `LCD0RESET`, pins 7/22/23 are the QSPI
+display bus, and pins 18 and 20 are `TP0INT` and `TP0RESET`. Neither the
+CST9220 nor the CO5300 appears on the mainboard schematic at all — every other
+chip does (AXP2101, QMI8658, ES8311, ES7210, PCF85063) — so both are bonded to
+the panel module and reached only through that connector.
+
+That rules the connector out twice over. The **display works**, through the
+same FPC. And the **touch controller answers on I²C**, so its power, SDA, SCL
+and reset lines through that FPC are conducting too. What is dead is the link
+between the controller and the capacitive grid it is bonded to, inside the
+module, where there is nothing to reseat.
+
+Reseating `J40` costs nothing if it is a hinged connector — a partially seated
+FPC could in principle contact some pins and not others — but expect it not to
+help. The remedy is a replacement board.
 
 **It is not a firmware bug, and this was tested rather than assumed.**
 Waveshare's own driver — their `SensorLib` `TouchDrvCST92xx`, built from their

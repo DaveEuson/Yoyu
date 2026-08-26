@@ -65,10 +65,12 @@ more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 > software check passes: right part (`0x9220`), real firmware, valid check
 > code, correct resolution, mode unlock confirmed.
 >
-> That points at the touch digitiser's connection to the controller. If you hit
-> this, **reseat the touch FPC ribbon** on the back of the panel before
-> anything else — it is the common cause and it travels loose. If that does not
-> fix it, the board needs replacing; no driver change will help.
+> The schematic rules out the wiring. Display and touch share one 24-pin FPC at
+> `J40`, the display works through it, and the touch controller answers on I²C
+> through it — so the connector is seated and conducting. Neither the CST9220
+> nor the CO5300 is on the mainboard schematic, so both are bonded to the panel
+> module. The dead link is between the controller and the sensing grid, inside
+> that module. **It is a faulty panel, not a repair and not a driver change.**
 > [Details](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
