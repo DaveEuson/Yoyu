@@ -261,6 +261,54 @@ def windows_from_usage(raw):
     return out
 
 
+def credits_from_usage(raw):
+    """What happens after the plan limits run out: money.
+
+    This is not a usage window and must never be treated as one. Every window
+    answers "how much room is left before you are stopped"; this answers "how
+    much have you now spent", which is the opposite side of the same moment --
+    you only reach it because a window ran out. Feeding it through the window
+    list would put it in front of the mascot, whose whole job is headroom, and
+    the board would show a cheerful character while the meter ran.
+
+    Anthropic reports it twice. `extra_usage` carries `utilization: null`, and
+    windows_from_usage drops anything with a null utilization -- which is why
+    "Extra usage" has sat in WINDOW_LABELS all this time as a label nothing
+    could ever render. `spend` is the richer of the two and is already in minor
+    units, so it is the one read here.
+
+    Returns None when credits are switched off or the account has none, which
+    is the common case and should show nothing at all.
+    """
+    sp = (raw or {}).get("spend")
+    if not isinstance(sp, dict) or not sp.get("enabled"):
+        return None
+    used = sp.get("used") or {}
+    limit = sp.get("limit") or {}
+    if used.get("amount_minor") is None:
+        return None
+    try:
+        used_minor = int(used["amount_minor"])
+        limit_minor = (int(limit["amount_minor"])
+                       if limit.get("amount_minor") is not None else None)
+    except (TypeError, ValueError):
+        return None
+    pct = sp.get("percent")
+    if pct is None and limit_minor:
+        pct = 100.0 * used_minor / limit_minor
+    out = {
+        "used_minor": used_minor,
+        "limit_minor": limit_minor,
+        # Minor units mean nothing without knowing where the point goes, and
+        # it is per-currency: 100 minor units is $1.00 but ¥100.
+        "exponent": int(used.get("exponent") or 2),
+        "currency": used.get("currency") or "USD",
+        "percent": round(float(pct), 1) if pct is not None else None,
+        "limit_reached": bool(sp.get("severity") == "critical"),
+    }
+    return out
+
+
 class LiveUnavailable(Exception):
     """A Claude Code login exists but live usage is temporarily unreadable.
     We must NOT fall back to log estimates in this case — stale real numbers
@@ -273,8 +321,12 @@ class LiveUnavailable(Exception):
 
 
 def get_live_windows():
-    """Real usage via Claude Code's login. Returns (windows, plan), or None
-    when there's no login at all. Raises LiveUnavailable on transient failure."""
+    """Real usage via Claude Code's login.
+
+    Returns (windows, plan, credits), or None when there's no login at all.
+    Raises LiveUnavailable on transient failure. `credits` is None unless the
+    account actually has usage credits switched on.
+    """
     creds, save_fn = read_creds()
     if not creds:
         return None
@@ -306,7 +358,7 @@ def get_live_windows():
     windows = windows_from_usage(raw)
     if not windows:
         raise LiveUnavailable("usage response had no windows")
-    return windows, creds.get("subscriptionType")
+    return windows, creds.get("subscriptionType"), credits_from_usage(raw)
 
 
 # ------------------------------------------------- fallback: estimate from logs
@@ -1334,8 +1386,9 @@ def run_once(cfg):
         print(f"live usage unavailable ({exc}); skipping this push so the "
               "tracker keeps its last real reading", file=sys.stderr)
         return False, min(900, exc.retry_after), exc.rate_limited
+    credits = None
     if live:
-        windows, plan = live
+        windows, plan, credits = live
         source = "live"
     else:
         # No Claude Code login on this machine at all -> estimation is the
@@ -1359,6 +1412,9 @@ def run_once(cfg):
     # "keep what you have" (so an older companion doesn't blank the screen), so
     # omitting it on a quiet window would leave this morning's ranking on
     # display under a caption claiming it covers the last 5 hours.
+    # Beside the windows, never among them -- see credits_from_usage().
+    if credits is not None:
+        payload["credits"] = credits
     payload["projects"] = projects
     payload["projects_window"] = PROJECT_WINDOW_LABEL
     payload["projects_more"] = hidden

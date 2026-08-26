@@ -179,8 +179,10 @@ def feed_once(urls):
         if st == "signed_out":
             return "red", "Claude sign-in cleared — run: claude, then /login", False
         return "red", "Claude Code not signed in — run: claude, then /login", False
-    windows, plan = live
+    windows, plan, credits = live
     payload = {"windows": windows, "plan": plan, "source": "live"}
+    if credits is not None:
+        payload["credits"] = credits
     urls = [urls] if isinstance(urls, str) else list(urls)
     delivered, rejected = 0, None
     for url in urls:

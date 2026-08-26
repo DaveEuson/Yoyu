@@ -643,5 +643,83 @@ class DisconnectTests(_QuietTest):
         self.assertIn("ab12cd", self.keys)
 
 
+class CreditsFromUsageTests(unittest.TestCase):
+    """What happens after the plan limits run out.
+
+    The shape here is copied from a real /api/oauth/usage response, because the
+    reason this went unshown for so long is that `extra_usage.utilization` is
+    null and windows_from_usage drops anything with a null utilization -- so
+    "Extra usage" sat in WINDOW_LABELS as a label nothing could render.
+    """
+
+    REAL = {
+        "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T23:59:59+00:00"},
+        "seven_day": {"utilization": 99.0, "resets_at": "2026-08-27T23:59:59+00:00"},
+        "extra_usage": {"is_enabled": True, "monthly_limit": 2000,
+                        "used_credits": 0.0, "utilization": None,
+                        "currency": "USD", "decimal_places": 2},
+        "spend": {"used": {"amount_minor": 0, "currency": "USD", "exponent": 2},
+                  "limit": {"amount_minor": 2000, "currency": "USD", "exponent": 2},
+                  "percent": 0, "severity": "normal", "enabled": True},
+    }
+
+    @staticmethod
+    def _spend(used, limit=2000, severity="normal", enabled=True, percent=None):
+        return {"spend": {"enabled": enabled, "severity": severity,
+                          "percent": percent,
+                          "used": {"amount_minor": used, "currency": "USD",
+                                   "exponent": 2},
+                          "limit": {"amount_minor": limit, "currency": "USD",
+                                    "exponent": 2}}}
+
+    def test_reads_the_real_payload_shape(self):
+        c = companion.credits_from_usage(self.REAL)
+        self.assertEqual(c["used_minor"], 0)
+        self.assertEqual(c["limit_minor"], 2000)
+        self.assertEqual(c["currency"], "USD")
+        self.assertFalse(c["limit_reached"])
+
+    def test_credits_never_appear_as_a_usage_window(self):
+        # The whole point of keeping them apart: a window would reach
+        # tightestWindow() and through it the mascot, whose job is headroom.
+        keys = [w["key"] for w in companion.windows_from_usage(self.REAL)]
+        self.assertNotIn("extra_usage", keys)
+        self.assertNotIn("spend", keys)
+
+    def test_percent_is_derived_when_the_server_omits_it(self):
+        c = companion.credits_from_usage(self._spend(500, percent=None))
+        self.assertEqual(c["percent"], 25.0)
+
+    def test_servers_percent_wins_when_given(self):
+        c = companion.credits_from_usage(self._spend(500, percent=99))
+        self.assertEqual(c["percent"], 99.0)
+
+    def test_critical_severity_is_the_spend_cap(self):
+        self.assertTrue(
+            companion.credits_from_usage(
+                self._spend(2000, severity="critical"))["limit_reached"])
+
+    def test_disabled_or_absent_credits_show_nothing(self):
+        # None means "draw no row", which is not the same as "spent nothing".
+        self.assertIsNone(companion.credits_from_usage(self._spend(0, enabled=False)))
+        self.assertIsNone(companion.credits_from_usage({}))
+        self.assertIsNone(companion.credits_from_usage(None))
+
+    def test_a_malformed_spend_block_is_ignored_not_guessed(self):
+        self.assertIsNone(companion.credits_from_usage({"spend": {"enabled": True}}))
+        self.assertIsNone(companion.credits_from_usage(
+            {"spend": {"enabled": True, "used": {"amount_minor": "lots"}}}))
+
+    def test_a_missing_cap_still_reports_what_was_spent(self):
+        raw = {"spend": {"enabled": True, "percent": None, "severity": "normal",
+                         "used": {"amount_minor": 512, "currency": "GBP",
+                                  "exponent": 2},
+                         "limit": {}}}
+        c = companion.credits_from_usage(raw)
+        self.assertEqual(c["used_minor"], 512)
+        self.assertIsNone(c["limit_minor"])
+        self.assertEqual(c["currency"], "GBP")
+
+
 if __name__ == "__main__":
     unittest.main()

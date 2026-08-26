@@ -432,6 +432,21 @@ static const int BOOT_BTN    = 0;     // BOOT button -> hold to factory reset
 static const int BAT_ADC_PIN = VBAT_PIN;  // via the onboard divider (x3)
 #endif
 static int       batPct      = -1;    // -1 = no battery / hidden
+
+// Usage credits: what happens after the plan limits run out.
+//
+// Deliberately NOT a Window. Every window answers "how much room before you are
+// stopped"; this answers "how much have you now spent", which is the far side
+// of the same moment. Putting it in the window list would hand it to
+// tightestWindow(), and through that to the mascot -- whose entire job is
+// headroom -- so the character would look healthy while the meter ran.
+static bool     credOn      = false;  // account has credits switched on
+static long     credUsed    = -1;     // minor units (cents); -1 = unknown
+static long     credLimit   = -1;     // minor units; -1 = no cap reported
+static int      credExp     = 2;      // where the decimal point goes
+static char     credCur[8]  = "USD";
+static float    credPct     = 0;
+static bool     credCapped  = false;  // spend limit reached
 static bool      batCharging = false;
 static uint8_t   backlight   = 255;   // 0..255
 static bool      showUsed    = false; // false = "% left", true = "% used"
@@ -754,6 +769,30 @@ static void readBattery() {
 #endif
 }
 
+// Minor units as money, without floating point. 340 with exponent 2 is $3.40;
+// the same 340 in a zero-decimal currency is 340. Only the symbol for the
+// currencies likely to turn up is special-cased -- everything else gets its
+// code, which is honest and fits.
+static void fmtMoney(char *out, size_t n, long minor, int exp, const char *cur) {
+  if (minor < 0) { strlcpy(out, "--", n); return; }
+  long div = 1;
+  for (int i = 0; i < exp; i++) div *= 10;
+  const char *sym = !strcmp(cur, "USD") ? "$"
+                  : !strcmp(cur, "EUR") ? "\u20AC"
+                  : !strcmp(cur, "GBP") ? "\u00A3" : "";
+  if (exp <= 0) snprintf(out, n, "%s%ld%s%s", sym, minor, sym[0] ? "" : " ",
+                         sym[0] ? "" : cur);
+  else snprintf(out, n, "%s%ld.%0*ld%s%s", sym, minor / div, exp, minor % div,
+                sym[0] ? "" : " ", sym[0] ? "" : cur);
+}
+
+// Whether the credits line is worth the space. Having credits available is a
+// fact about the account; spending them is a fact about today, and only the
+// second one earns a row on a 2" screen.
+static bool creditsWorthShowing() {
+  return credOn && credUsed > 0;
+}
+
 // Small battery glyph at (x,y) in design space; nothing drawn when no battery
 // is present.
 static void drawBattery(int x, int y) {
@@ -853,8 +892,16 @@ static void drawMeters() {
   }
 
   // meters: label / big % left / bar / countdown
+  //
+  // Three rows fill the screen exactly, so the credits row has to take one
+  // rather than be squeezed in beside them. It takes the third, and only once
+  // credits are actually being spent -- at which point the plan windows it
+  // displaces are pegged at 100% anyway, and "you are now paying" is the more
+  // useful of the two things competing for that space.
+  const bool showCred = creditsWorthShowing();
+  const int maxRows = showCred ? 2 : 3;
   int y = 58;
-  for (int i = 0; i < nWindows && i < 3; i++) {
+  for (int i = 0; i < nWindows && i < maxRows; i++) {
     Window &w = windows[i];
     float left = 100.0f - w.utilization;
     if (left < 0) left = 0; if (left > 100) left = 100;
@@ -890,6 +937,52 @@ static void drawMeters() {
     y += 82;
   }
 
+  // The credits row. Same shape as a meter and the same polarity: every bar on
+  // this screen means "how much is left". Reading one of them backwards
+  // because it happens to be money would be a trap.
+  if (showCred) {
+    char m1[24], m2[24];
+    float left = 100.0f - credPct;
+    if (left < 0) left = 0;
+    if (credLimit < 0) left = 100;          // no cap reported: nothing to run out of
+    uint16_t fill  = credCapped ? C_CRIT : left <= 10 ? C_CRIT
+                   : left <= 30 ? C_WARN : C_ACC;
+    uint16_t track = credCapped ? C_CRIT_T : left <= 10 ? C_CRIT_T
+                   : left <= 30 ? C_WARN_T : C_ACC_T;
+
+    gfx->setTextSize(mapSz(2));
+    gfx->setTextColor(C_INK);
+    gfx->setCursor(mapX(12), mapY(y));
+    gfx->print("Credits");
+
+    fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+    if (credLimit >= 0) {
+      fmtMoney(m2, sizeof(m2), credLimit, credExp, credCur);
+      snprintf(buf, sizeof(buf), "%s/%s", m1, m2);
+    } else {
+      snprintf(buf, sizeof(buf), "%s", m1);
+    }
+    int16_t cx1, cy1; uint16_t ctw, cth;
+    gfx->setTextSize(mapSz(2));
+    gfx->getTextBounds(buf, 0, 0, &cx1, &cy1, &ctw, &cth);
+    gfx->setCursor(mapX(228) - (int)ctw, mapY(y + 22));
+    gfx->print(buf);
+
+    int barY = y + 44;
+    const int barX = mapX(12), barW = mapLen(216), barH = mapLen(14);
+    gfx->fillRoundRect(barX, mapY(barY), barW, barH, barH / 2, track);
+    int wpx = (int)(barW * left / 100.0f);
+    if (wpx < mapLen(8)) wpx = mapLen(8);
+    gfx->fillRoundRect(barX, mapY(barY), wpx, barH, barH / 2, fill);
+
+    gfx->setTextSize(mapSz(2));
+    gfx->setTextColor(credCapped ? C_CRIT : C_MUTED);
+    gfx->setCursor(mapX(12), mapY(barY + 18));
+    // Say what this row is, because a money figure on a usage screen is
+    // otherwise ambiguous -- it could as easily be a bill as a budget.
+    gfx->print(credCapped ? "spend limit reached" : "past your plan limits");
+  }
+
   // footer: how fresh the data is, plus a hint if more windows exist than fit.
   if (lastPushMs) {
     gfx->setTextSize(mapSz(1));
@@ -903,9 +996,9 @@ static void drawMeters() {
       if (age < 90) gfx->print("updated just now");
       else { snprintf(buf, sizeof(buf), "updated %lum ago", age / 60); gfx->print(buf); }
     }
-    if (nWindowsSeen > 3) {
+    if (nWindowsSeen > maxRows) {
       gfx->setTextColor(C_ACC);
-      snprintf(buf, sizeof(buf), "   +%d more", nWindowsSeen - 3);
+      snprintf(buf, sizeof(buf), "   +%d more", nWindowsSeen - maxRows);
       gfx->print(buf);
     }
   }
@@ -2084,6 +2177,17 @@ static void handleStatus() {
   } else {
     doc["battery"] = (const char *)nullptr;
   }
+  if (credOn) {
+    JsonObject cr = doc["credits"].to<JsonObject>();
+    cr["used_minor"]  = credUsed;
+    cr["limit_minor"] = credLimit;
+    cr["exponent"]    = credExp;
+    cr["currency"]    = credCur;
+    cr["percent"]     = credPct;
+    cr["limit_reached"] = credCapped;
+  } else {
+    doc["credits"] = (const char *)nullptr;
+  }
   doc["pairing"] = pairingActive();
   JsonObject rc = doc["release_check"].to<JsonObject>();
   rc["ok"]          = tagFetchOk;
@@ -2162,6 +2266,23 @@ static void handlePush() {
     dst.resets_at = parseISO(w["resets_at"] | (const char *)nullptr);
   }
   strlcpy(plan, doc["plan"] | "", sizeof(plan));
+  // Optional: usage credits. An older companion omits the key entirely, and an
+  // account without credits sends nothing -- both mean "show nothing", which is
+  // not the same as "spent nothing", so the flag is what gates the display.
+  if (doc["credits"].is<JsonObject>()) {
+    JsonObject cr = doc["credits"];
+    credOn    = true;
+    credUsed  = cr["used_minor"]  | -1L;
+    credLimit = cr["limit_minor"] | -1L;
+    credExp   = cr["exponent"]    | 2;
+    if (credExp < 0 || credExp > 4) credExp = 2;
+    strlcpy(credCur, cr["currency"] | "USD", sizeof(credCur));
+    float cp  = cr["percent"] | 0.0f;
+    credPct   = cp < 0 ? 0 : (cp > 100 ? 100 : cp);
+    credCapped = cr["limit_reached"] | false;
+  } else {
+    credOn = false;
+  }
   // Optional: per-project shares, from the companion reading Claude Code's own
   // session logs. An older companion simply omits the key — leave the last set
   // standing rather than blanking the screen on every push.
