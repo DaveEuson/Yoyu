@@ -133,6 +133,10 @@ the command line: `companion.py --disconnect`.
 - **Meters** for every usage window Claude reports (5-hour session, weekly,
   weekly Opus…), fuel-gauge style — amber under 30% left, red under 10%.
 - **Reset countdowns** and a clock.
+- **Usage credits**, once you go past your plan limits and start spending them
+  — the money where the percentage goes, and a phone alert the first time a
+  period tips over. It only appears when credits are actually being spent;
+  having them available is a fact about your account, not about today.
 - **Eight screens**, cycled by a tap or on a timer: meters, focus, history,
   your character, a timer, actions, projects and settings — each one can be
   switched off if you don't want it in the rotation.
@@ -149,7 +153,11 @@ the command line: `companion.py --disconnect`.
   (2" LCD board only — touch is not working on the AMOLED yet.)
 - **Battery gauge** from the LiPo header.
 - **Phone alerts** via ntfy or Pushover when a window crosses a threshold, with
-  a recovery notice.
+  a recovery notice — plus one the first time a period starts spending usage
+  credits, and one if the spend limit is reached. Those two aren't tied to the
+  percentage: the useful moment is the first cent, whatever the cap is.
+- **A tray icon that matches your board** — whichever of the five characters
+  you picked, tinted green while it's feeding and red when it's stuck.
 
 ## Security
 
