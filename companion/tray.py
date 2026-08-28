@@ -44,7 +44,7 @@ INTERVAL = 120  # seconds between feeds
 # rather than a curiosity, and feeding only the first meant the second sat
 # there saying it was waiting for this computer.
 state = {"color": "amber", "status": "Starting…", "url": None, "boards": [],
-         "swept": None, "feeding": True, "fixed": False}
+         "swept": None, "feeding": True, "fixed": False, "avatar": None}
 
 
 def initial_urls():
@@ -99,6 +99,14 @@ def enrich_boards(icon):
             b["board"] = info.get("board") or "board"
             b["version"] = info.get("version") or "?"
             changed = True
+        # The first board's character drives the tray icon. With two boards the
+        # icon can only be one of them, and the first is the one every other
+        # single-target action already uses.
+        if b is state["boards"][0]:
+            info = info or companion._probe_info(b["url"], timeout=3)
+            if info and info.get("avatar") != state.get("avatar"):
+                state["avatar"] = info.get("avatar")
+                changed = True
     if changed and icon is not None:
         try:
             icon.menu = build_menu()
@@ -129,9 +137,56 @@ KITSUNE_HEAD = [".K.......K.", ".KSK...KSK.", "KBSSK.KSSBK", "KBBBKKKBBBK",
 _SPRK = {"K": (26, 24, 22), "W": (250, 247, 239),
          "B": (201, 96, 63), "S": (158, 68, 41)}
 
+# The other four characters, cropped to what survives at 11x13 cells. A tray
+# icon is about 22 real pixels across on a HiDPI bar, so these are the
+# recognisable part of each -- the moon's disc, the candle's flame and stub,
+# the plant's pot and shoot, the cat's head -- not a shrunken copy of the
+# board's sprite, which turns to mush at this size.
+#
+# The GAUGE is deliberately left on the board. The icon has room for the
+# character or the measurement, not both, and the measurement is the board's
+# entire job; the icon's job is to say which board this is and whether the
+# feed is healthy.
+_LIT, _DARK = (232, 228, 208), (74, 72, 62)
+_WAX, _WAXD = (232, 224, 200), (184, 174, 147)
+_LEAF, _LEAFD = (122, 168, 92), (78, 111, 58)
 
-def make_icon(color):
-    """Draw the kitsune, its ears tinted by feed state."""
+MOON_HEAD = ["...LLLLL...", ".LLLLLLLLL.", ".LLLLLLLLL.", "LLLLLLLLLLL",
+             "LLLLLLLLLLL", "LLLLLLLLLLL", "LLLLLLLLLLL", "LLLLLLLLLLL",
+             "LLLLLLLLLLL", ".LLLLLLLLL.", ".LLLLLLLLL.", "...LLLLL...",
+             "..........."]
+CANDLE_HEAD = ["....F......", "....F......", "...KKK.....", "...WWD.....",
+               "...WWD.....", "...WWD.....", "...WWD.....", "...WWD.....",
+               "...WWD.....", "..DDDDD....", ".DDDDDDD...", "...........",
+               "..........."]
+PLANT_HEAD = [".....G.....", "...GGG.GG..", "..GG.G.....", ".....G.GG..",
+              "...GG.G....", ".....G.....", "..ggggggg..", ".BBBBBBBBB.",
+              ".BBBBBBBBB.", "..BBBBBBB..", "..BBBBBBB..", "...BBBBB...",
+              "..........."]
+CAT_HEAD = ["..K.....K..", ".KSK...KSK.", ".KBSK.KSBK.", ".KBBKKKBBK.",
+            "KBBBBBBBBBK", "KBBBBBBBBBK", "KBBBBBBBBBK", ".KBBBBBBBK.",
+            ".KBBBBBBBK.", "KBBBBBBBBBK", ".KKKKKKKKK.", "...........",
+            "..........."]
+
+_AV_COLS = dict(_SPRK)
+_AV_COLS.update({"L": _LIT, "D": _WAXD, "W": _WAX, "F": (250, 178, 25),
+                 "G": _LEAF, "g": _LEAFD})
+
+# Keyed by what /api/status reports, so the icon follows the board.
+AVATAR_ART = {"Kitsune": KITSUNE_HEAD, "Moon": MOON_HEAD,
+              "Candle": CANDLE_HEAD, "Plant": PLANT_HEAD, "Cat": CAT_HEAD}
+
+
+def make_icon(color, avatar=None):
+    """Draw whichever character the board wears, tinted by feed state.
+
+    The status colour has to land somewhere legible on every one of them, and
+    they do not share a feature: the kitsune has ears, the moon has neither
+    ears nor anything else at the top. So each names its own spot, and the
+    fallback is a corner pip -- better a small dot in a known place than a
+    tint smeared over a face.
+    """
+    art = AVATAR_ART.get(avatar or "Kitsune", KITSUNE_HEAD)
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([2, 2, 61, 61], radius=14, fill=(38, 38, 36, 255))
@@ -143,16 +198,40 @@ def make_icon(color):
         x0, y0 = padx + cx * U, pady + cy * U
         d.rectangle([x0, y0, x0 + U - 1, y0 + U - 1], fill=rgb)
 
-    for y, row in enumerate(KITSUNE_HEAD):
+    for y, row in enumerate(art):
         for x, ch in enumerate(row):
-            if ch in _SPRK:
-                cell(x, y, _SPRK[ch])
-    for x in (2, 8):                                          # ears, in status
-        cell(x, 1, status)
-    for x in (2, 7):                                          # slanted eyes
-        cell(x, 4, _SPRK["K"])
-    cell(5, 7, _SPRK["K"])                                    # nose
-    cell(4, 8, _SPRK["K"]); cell(6, 8, _SPRK["K"])            # mouth
+            col = _AV_COLS.get(ch)
+            if col:
+                cell(x, y, col)
+
+    if art is KITSUNE_HEAD:
+        for x in (2, 8):                                      # ear interiors
+            cell(x, 1, status)
+        for x in (2, 7):                                      # eyes
+            cell(x, 4, _SPRK["K"])
+        cell(5, 7, _SPRK["K"])
+        cell(4, 8, _SPRK["K"]); cell(6, 8, _SPRK["K"])
+    elif art is CAT_HEAD:
+        # Its own placement, not the kitsune's. The two sprites are different
+        # shapes -- the cat's face sits a row lower and its eyes further in --
+        # and borrowing the fox's coordinates left marks in the wrong places.
+        for x in (2, 8):                                      # ear interiors
+            cell(x, 1, status)
+        for x in (3, 7):                                      # eyes
+            cell(x, 5, _SPRK["K"])
+        cell(5, 6, (217, 119, 87))                            # nose
+    elif art is MOON_HEAD:
+        for x in (3, 7):                                      # eyes
+            cell(x, 5, _SPRK["K"])
+        cell(4, 8, _SPRK["K"]); cell(5, 8, _SPRK["K"]); cell(6, 8, _SPRK["K"])
+        cell(9, 2, status)                                    # a lit limb
+        cell(1, 2, status)
+    elif art is CANDLE_HEAD:
+        cell(4, 0, status); cell(4, 1, status)                # the flame itself
+    else:                                                     # plant
+        cell(5, 0, status)                                    # the growing tip
+        for x in (4, 6):
+            cell(x, 9, _SPRK["K"])                            # eyes on the pot
     return img
 
 
@@ -179,8 +258,10 @@ def feed_once(urls):
         if st == "signed_out":
             return "red", "Claude sign-in cleared — run: claude, then /login", False
         return "red", "Claude Code not signed in — run: claude, then /login", False
-    windows, plan = live
+    windows, plan, credits = live
     payload = {"windows": windows, "plan": plan, "source": "live"}
+    if credits is not None:
+        payload["credits"] = credits
     urls = [urls] if isinstance(urls, str) else list(urls)
     delivered, rejected = 0, None
     for url in urls:
@@ -212,7 +293,7 @@ def feed_once(urls):
 
 
 def refresh(icon):
-    icon.icon = make_icon(state["color"])
+    icon.icon = make_icon(state["color"], state.get("avatar"))
     icon.update_menu()
 
 

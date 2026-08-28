@@ -39,7 +39,9 @@ class WindowLabelTests(unittest.TestCase):
                          "Weekly (New Model)")
 
     def test_unrelated_key_falls_back_to_title_case(self):
-        self.assertEqual(companion._window_label("extra_usage"), "Extra usage")
+        # extra_usage used to be the example here. It is no longer a window at
+        # all -- it is money, excluded by name -- and the case below already
+        # covers the fallback this test is about.
         self.assertEqual(companion._window_label("some_future_thing"),
                          "Some Future Thing")
 
@@ -641,6 +643,227 @@ class DisconnectTests(_QuietTest):
         companion.urllib.request.urlopen = boom
         self.assertFalse(companion.disconnect_board("http://b:8080"))
         self.assertIn("ab12cd", self.keys)
+
+
+class CreditsFromUsageTests(unittest.TestCase):
+    """What happens after the plan limits run out.
+
+    The shape here is copied from a real /api/oauth/usage response, because the
+    reason this went unshown for so long is that `extra_usage.utilization` is
+    null and windows_from_usage drops anything with a null utilization -- so
+    "Extra usage" sat in WINDOW_LABELS as a label nothing could render.
+    """
+
+    REAL = {
+        "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T23:59:59+00:00"},
+        "seven_day": {"utilization": 99.0, "resets_at": "2026-08-27T23:59:59+00:00"},
+        "extra_usage": {"is_enabled": True, "monthly_limit": 2000,
+                        "used_credits": 0.0, "utilization": None,
+                        "currency": "USD", "decimal_places": 2},
+        "spend": {"used": {"amount_minor": 0, "currency": "USD", "exponent": 2},
+                  "limit": {"amount_minor": 2000, "currency": "USD", "exponent": 2},
+                  "percent": 0, "severity": "normal", "enabled": True},
+    }
+
+    @staticmethod
+    def _spend(used, limit=2000, severity="normal", enabled=True, percent=None):
+        return {"spend": {"enabled": enabled, "severity": severity,
+                          "percent": percent,
+                          "used": {"amount_minor": used, "currency": "USD",
+                                   "exponent": 2},
+                          "limit": {"amount_minor": limit, "currency": "USD",
+                                    "exponent": 2}}}
+
+    def test_reads_the_real_payload_shape(self):
+        c = companion.credits_from_usage(self.REAL)
+        self.assertEqual(c["used_minor"], 0)
+        self.assertEqual(c["limit_minor"], 2000)
+        self.assertEqual(c["currency"], "USD")
+        self.assertFalse(c["limit_reached"])
+
+    def test_credits_never_appear_as_a_usage_window(self):
+        # The whole point of keeping them apart: a window would reach
+        # tightestWindow() and through it the mascot, whose job is headroom.
+        keys = [w["key"] for w in companion.windows_from_usage(self.REAL)]
+        self.assertNotIn("extra_usage", keys)
+        self.assertNotIn("spend", keys)
+
+    def test_percent_is_derived_when_the_server_omits_it(self):
+        c = companion.credits_from_usage(self._spend(500, percent=None))
+        self.assertEqual(c["percent"], 25.0)
+
+    def test_servers_percent_wins_when_given(self):
+        c = companion.credits_from_usage(self._spend(500, percent=99))
+        self.assertEqual(c["percent"], 99.0)
+
+    def test_critical_severity_is_the_spend_cap(self):
+        self.assertTrue(
+            companion.credits_from_usage(
+                self._spend(2000, severity="critical"))["limit_reached"])
+
+    def test_disabled_or_absent_credits_show_nothing(self):
+        # None means "draw no row", which is not the same as "spent nothing".
+        self.assertIsNone(companion.credits_from_usage(self._spend(0, enabled=False)))
+        self.assertIsNone(companion.credits_from_usage({}))
+        self.assertIsNone(companion.credits_from_usage(None))
+
+    def test_spend_still_shows_after_credits_are_switched_off(self):
+        """Found on a live account that had gone over: $41.24 of a $40 cap with
+        enabled=false, and the first version of this returned None.
+
+        "enabled: false" means credits can no longer be SPENT -- the cap was
+        hit, or an org disabled them. It does not mean the account never had
+        any, and money already gone is still money gone. Hiding it at exactly
+        the moment the figure matters most defeats the feature.
+        """
+        c = companion.credits_from_usage(
+            self._spend(4124, limit=4000, severity="critical", enabled=False,
+                        percent=100))
+        self.assertIsNotNone(c)
+        self.assertEqual(c["used_minor"], 4124)
+        self.assertTrue(c["limit_reached"])
+        self.assertFalse(c["available"])
+
+    def test_extra_usage_never_becomes_a_window_even_when_it_has_a_number(self):
+        """The bug the account going over actually exposed.
+
+        extra_usage carries utilization: null only while UNUSED. Once credits
+        are spent it reports a real number, sails through the null check into
+        the window list, becomes the tightest window and drives the mascot --
+        so the board showed "out of tokens" with the plan windows at 10% and
+        1%. Excluding it cannot depend on a field's value.
+        """
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T00:00:00Z"},
+            "extra_usage": {"utilization": 100.0, "is_enabled": False,
+                            "used_credits": 4124.0},
+            "spend": {"percent": 100, "enabled": False},
+        })]
+        self.assertEqual(keys, ["five_hour"])
+
+    def test_a_malformed_spend_block_is_ignored_not_guessed(self):
+        self.assertIsNone(companion.credits_from_usage({"spend": {"enabled": True}}))
+        self.assertIsNone(companion.credits_from_usage(
+            {"spend": {"enabled": True, "used": {"amount_minor": "lots"}}}))
+
+    def test_internal_codename_windows_are_not_shown(self):
+        # nimbus_quill and friends come back beside the real windows. A board
+        # with three meter slots was spending one on "Nimbus Quill 0%".
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T00:00:00Z"},
+            "nimbus_quill": {"utilization": 0.0, "resets_at": None},
+            "tangelo": {"utilization": 0.0, "resets_at": None},
+        })]
+        self.assertEqual(keys, ["five_hour"])
+
+    def test_an_unknown_window_with_a_reset_time_still_shows(self):
+        # The seven_day_<model> case this code already goes out of its way to
+        # handle: a model Anthropic ships later must not be filtered away.
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "seven_day_newmodel": {"utilization": 0.0,
+                                   "resets_at": "2026-08-27T00:00:00Z"},
+        })]
+        self.assertEqual(keys, ["seven_day_newmodel"])
+
+    def test_an_unknown_window_being_used_still_shows(self):
+        # No reset time but real usage on it: that is a limit doing something,
+        # and hiding it would hide the thing the board exists to report.
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "mystery": {"utilization": 42.0, "resets_at": None},
+        })]
+        self.assertEqual(keys, ["mystery"])
+
+    def test_a_missing_cap_still_reports_what_was_spent(self):
+        raw = {"spend": {"enabled": True, "percent": None, "severity": "normal",
+                         "used": {"amount_minor": 512, "currency": "GBP",
+                                  "exponent": 2},
+                         "limit": {}}}
+        c = companion.credits_from_usage(raw)
+        self.assertEqual(c["used_minor"], 512)
+        self.assertIsNone(c["limit_minor"])
+        self.assertEqual(c["currency"], "GBP")
+
+
+class Reject401Tests(_QuietTest):
+    """A 401 whose expiresAt still looks fine.
+
+    Refresh tokens rotate, so anything else using the same login can kill this
+    access token while our own clock still says it is good. Before this, the
+    clock-based check handed back the same dead token every cycle and the
+    boards stayed dark until somebody noticed and ran `claude /login`. Caught
+    in the wild, not in a test.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.forced = []          # every valid_token(force=) we were asked for
+        self.fetches = 0
+        self.reads = 0
+        creds = {"accessToken": "dead", "refreshToken": "r",
+                 "expiresAt": 9e18, "_raw": {}, "subscriptionType": "max"}
+
+        def fake_read():
+            self.reads += 1
+            return dict(creds), (lambda o: None)
+
+        def fake_valid(c, save, force=False):
+            self.forced.append(force)
+            return "fresh" if force else "dead"
+
+        for name, repl in (("read_creds", fake_read),
+                           ("valid_token", fake_valid)):
+            orig = getattr(companion, name)
+            setattr(companion, name, repl)
+            self.addCleanup(setattr, companion, name, orig)
+
+    def _fetch(self, results):
+        """results: list of "ok" or an HTTP code to raise."""
+        def f(token):
+            self.fetches += 1
+            r = results[min(self.fetches - 1, len(results) - 1)]
+            if r == "ok":
+                return {"five_hour": {"utilization": 5.0,
+                                      "resets_at": "2026-08-27T00:00:00Z"}}
+            raise companion.urllib.error.HTTPError(
+                companion.USAGE_URL, r, "no", {}, None)
+        orig = companion.fetch_usage
+        companion.fetch_usage = f
+        self.addCleanup(setattr, companion, "fetch_usage", orig)
+
+    def test_a_401_forces_one_refresh_and_retries(self):
+        self._fetch([401, "ok"])
+        windows, plan, credits = companion.get_live_windows()
+        self.assertEqual(self.fetches, 2)
+        self.assertEqual(self.forced, [False, True])   # cached, then forced
+        self.assertEqual([w["key"] for w in windows], ["five_hour"])
+
+    def test_creds_are_re_read_before_the_forced_refresh(self):
+        # The first call may already have written a new refresh token back;
+        # refreshing with the stale one in memory spends a dead token.
+        self._fetch([401, "ok"])
+        companion.get_live_windows()
+        self.assertEqual(self.reads, 2)
+
+    def test_a_second_401_gives_up_and_says_what_to_do(self):
+        self._fetch([401, 401])
+        with self.assertRaises(companion.LiveUnavailable) as cm:
+            companion.get_live_windows()
+        self.assertEqual(self.fetches, 2)              # exactly two, no loop
+        self.assertIn("/login", str(cm.exception))
+
+    def test_other_errors_are_not_retried(self):
+        # A 429 must back off, not burn a refresh token retrying.
+        self._fetch([429, "ok"])
+        with self.assertRaises(companion.LiveUnavailable) as cm:
+            companion.get_live_windows()
+        self.assertEqual(self.fetches, 1)
+        self.assertTrue(cm.exception.rate_limited)
+
+    def test_a_healthy_call_never_forces_a_refresh(self):
+        self._fetch(["ok"])
+        companion.get_live_windows()
+        self.assertEqual(self.fetches, 1)
+        self.assertEqual(self.forced, [False])
 
 
 if __name__ == "__main__":

@@ -71,7 +71,6 @@ WINDOW_LABELS = {
     "seven_day_opus": "Weekly (Opus)",
     "seven_day_fable": "Weekly (Fable)",
     "seven_day_oauth_apps": "Weekly (connected apps)",
-    "extra_usage": "Extra usage",
 }
 
 # Fallback-only: rough token budgets if we must estimate from logs. Anthropic
@@ -167,10 +166,17 @@ def _parse_creds(raw):
     }
 
 
-def valid_token(creds, save_fn):
-    """Return a usable access token, refreshing only if expired. None on fail."""
+def valid_token(creds, save_fn, force=False):
+    """Return a usable access token, refreshing if expired. None on fail.
+
+    `force` refreshes regardless of the clock. Needed because expiresAt is not
+    the only way a token dies: refresh tokens rotate, so anything else using
+    this login can invalidate ours while our own timestamp still says it is
+    good. In that state the check below happily hands back a dead token
+    forever.
+    """
     exp_s = creds["expiresAt"] / 1000.0 if creds["expiresAt"] else 0
-    if exp_s and exp_s - REFRESH_MARGIN > time.time():
+    if not force and exp_s and exp_s - REFRESH_MARGIN > time.time():
         return creds["accessToken"]            # still fresh — pure read
     if not creds["refreshToken"]:
         return creds["accessToken"] if not exp_s else None
@@ -238,14 +244,40 @@ def _window_label(key):
     return key.replace("_", " ").title()
 
 
+# Not usage windows, whatever they look like. "spend" is an object of a
+# different shape entirely, and "extra_usage" is money -- see
+# credits_from_usage() for why it must never reach the window list.
+NOT_WINDOWS = ("extra_usage", "spend", "limits", "member_dashboard_available")
+
+
 def windows_from_usage(raw):
     order = list(WINDOW_LABELS)
     out = []
     for key, value in (raw or {}).items():
+        if key in NOT_WINDOWS:
+            continue
         if not isinstance(value, dict):
             continue
         util = value.get("utilization")
         if util is None:
+            continue
+        # Skip entries that are both unrecognised and information-free.
+        #
+        # The endpoint returns internal codenames alongside the real windows --
+        # nimbus_quill, tangelo, amber_ladder, cinder_cove and friends -- and
+        # _window_label happily Title-Cases them, so a board with three meter
+        # slots was spending one on "Nimbus Quill 0%". That says nothing to
+        # anyone and crowds out a window that does.
+        #
+        # Deliberately conservative, because guessing wrong hides a real limit.
+        # A window Anthropic actually ships has a reset time; that is what
+        # makes it a window. So a KNOWN key always shows, an unknown key WITH
+        # a reset time shows (the seven_day_<model> case this code already
+        # goes out of its way to handle), and only an unknown key with no
+        # reset and nothing used is dropped.
+        if (key not in WINDOW_LABELS
+                and not (value.get("resets_at") or value.get("resetsAt"))
+                and not util):
             continue
         try:
             util = max(0.0, min(100.0, float(util)))
@@ -261,6 +293,66 @@ def windows_from_usage(raw):
     return out
 
 
+def credits_from_usage(raw):
+    """What happens after the plan limits run out: money.
+
+    This is not a usage window and must never be treated as one. Every window
+    answers "how much room is left before you are stopped"; this answers "how
+    much have you now spent", which is the opposite side of the same moment --
+    you only reach it because a window ran out. Feeding it through the window
+    list would put it in front of the mascot, whose whole job is headroom, and
+    the board would show a cheerful character while the meter ran.
+
+    Anthropic reports it twice. `extra_usage` carries `utilization: null`, and
+    windows_from_usage drops anything with a null utilization -- which is why
+    "Extra usage" has sat in WINDOW_LABELS all this time as a label nothing
+    could ever render. `spend` is the richer of the two and is already in minor
+    units, so it is the one read here.
+
+    Returns None when credits are switched off or the account has none, which
+    is the common case and should show nothing at all.
+    """
+    sp = (raw or {}).get("spend")
+    if not isinstance(sp, dict):
+        return None
+    used = sp.get("used") or {}
+    limit = sp.get("limit") or {}
+    if used.get("amount_minor") is None:
+        return None
+    try:
+        used_minor = int(used["amount_minor"])
+        limit_minor = (int(limit["amount_minor"])
+                       if limit.get("amount_minor") is not None else None)
+    except (TypeError, ValueError):
+        return None
+    # "enabled: false" means credits can no longer be SPENT -- the cap was hit,
+    # or an org switched them off. It does not mean the account never had any,
+    # and treating the two the same hid $41.24 of real spend at the exact
+    # moment the figure mattered most. Money already gone is still money gone.
+    #
+    # So: nothing to show only when there is genuinely nothing -- not available
+    # AND nothing spent.
+    if not sp.get("enabled") and not used_minor:
+        return None
+    pct = sp.get("percent")
+    if pct is None and limit_minor:
+        pct = 100.0 * used_minor / limit_minor
+    out = {
+        "used_minor": used_minor,
+        "limit_minor": limit_minor,
+        # Minor units mean nothing without knowing where the point goes, and
+        # it is per-currency: 100 minor units is $1.00 but ¥100.
+        "exponent": int(used.get("exponent") or 2),
+        "currency": used.get("currency") or "USD",
+        "percent": round(float(pct), 1) if pct is not None else None,
+        "limit_reached": bool(sp.get("severity") == "critical"),
+        # Whether more can still be spent. False with a non-zero used_minor is
+        # the stopped state: you spent this, and it has now cut you off.
+        "available": bool(sp.get("enabled")),
+    }
+    return out
+
+
 class LiveUnavailable(Exception):
     """A Claude Code login exists but live usage is temporarily unreadable.
     We must NOT fall back to log estimates in this case — stale real numbers
@@ -273,40 +365,70 @@ class LiveUnavailable(Exception):
 
 
 def get_live_windows():
-    """Real usage via Claude Code's login. Returns (windows, plan), or None
-    when there's no login at all. Raises LiveUnavailable on transient failure."""
+    """Real usage via Claude Code's login.
+
+    Returns (windows, plan, credits), or None when there's no login at all.
+    Raises LiveUnavailable on transient failure. `credits` is None unless the
+    account actually has usage credits switched on.
+    """
     creds, save_fn = read_creds()
     if not creds:
         return None
-    token = valid_token(creds, save_fn)
-    if not token:
-        raise LiveUnavailable(
-            "Claude Code's login here needs signing in again — run `claude`, "
-            "then /login")
-    try:
-        raw = fetch_usage(token)
-    except urllib.error.HTTPError as exc:
-        retry_after = 0
+    # Two attempts at most. The second only happens on a 401, and only after
+    # forcing a refresh: a rejected token whose expiresAt still looks fine
+    # means it was rotated out from under us, not that it aged out, and the
+    # clock-based check will keep returning the same dead token until somebody
+    # notices the boards have gone quiet and runs `claude /login` by hand.
+    # One refresh fixes it without anyone being told anything.
+    raw = None
+    for attempt in (0, 1):
+        if attempt:
+            # Re-read first: the earlier call may already have written a new
+            # refresh token back, and refreshing with the stale one in memory
+            # would spend a token that is no longer current.
+            creds, save_fn = read_creds()
+            if not creds:
+                raise LiveUnavailable("Claude Code's login went away mid-read")
+        token = valid_token(creds, save_fn, force=bool(attempt))
+        if not token:
+            raise LiveUnavailable(
+                "Claude Code's login here needs signing in again — run "
+                "`claude`, then /login")
         try:
-            retry_after = int(exc.headers.get("Retry-After", 0) or 0)
-        except (TypeError, ValueError):
-            pass
-        detail = ""
-        try:
-            detail = exc.read().decode("utf-8", "replace")[:200]
-        except Exception:  # noqa: BLE001
-            pass
-        raise LiveUnavailable(
-            f"usage endpoint returned HTTP {exc.code}"
-            + (f", retry after {retry_after}s" if retry_after else "")
-            + (f" — {detail}" if detail else ""),
-            retry_after=retry_after, rate_limited=(exc.code == 429))
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise LiveUnavailable(f"couldn't read usage: {exc}")
+            raw = fetch_usage(token)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and attempt == 0:
+                print("access token was rejected; refreshing and retrying once",
+                      file=sys.stderr)
+                continue
+            retry_after = 0
+            try:
+                retry_after = int(exc.headers.get("Retry-After", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            extra = ""
+            if exc.code == 401:
+                # Second 401 after a real refresh: the refresh token is spent
+                # too, and nothing here can mint another one.
+                extra = (" — a refresh did not help, so this login has been "
+                         "signed out elsewhere. Run `claude`, then /login")
+            raise LiveUnavailable(
+                f"usage endpoint returned HTTP {exc.code}"
+                + (f", retry after {retry_after}s" if retry_after else "")
+                + (f" — {detail}" if detail else "") + extra,
+                retry_after=retry_after, rate_limited=(exc.code == 429))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise LiveUnavailable(f"couldn't read usage: {exc}")
     windows = windows_from_usage(raw)
     if not windows:
         raise LiveUnavailable("usage response had no windows")
-    return windows, creds.get("subscriptionType")
+    return windows, creds.get("subscriptionType"), credits_from_usage(raw)
 
 
 # ------------------------------------------------- fallback: estimate from logs
@@ -1334,8 +1456,9 @@ def run_once(cfg):
         print(f"live usage unavailable ({exc}); skipping this push so the "
               "tracker keeps its last real reading", file=sys.stderr)
         return False, min(900, exc.retry_after), exc.rate_limited
+    credits = None
     if live:
-        windows, plan = live
+        windows, plan, credits = live
         source = "live"
     else:
         # No Claude Code login on this machine at all -> estimation is the
@@ -1359,6 +1482,9 @@ def run_once(cfg):
     # "keep what you have" (so an older companion doesn't blank the screen), so
     # omitting it on a quiet window would leave this morning's ranking on
     # display under a caption claiming it covers the last 5 hours.
+    # Beside the windows, never among them -- see credits_from_usage().
+    if credits is not None:
+        payload["credits"] = credits
     payload["projects"] = projects
     payload["projects_window"] = PROJECT_WINDOW_LABEL
     payload["projects_more"] = hidden

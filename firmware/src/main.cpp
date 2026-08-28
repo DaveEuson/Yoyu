@@ -376,7 +376,7 @@ static_assert(sizeof(AP_PSK) - 1 >= 8,
               "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
               "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
-static const char *FW_VERSION = "1.8.0";
+static const char *FW_VERSION = "1.9.0";
 
 // Phase 2 — self-contained: poll Anthropic's usage endpoint directly, using an
 // OAuth login pasted once via /connect. Same contract the companion uses.
@@ -384,7 +384,7 @@ static const char *CLIENT_ID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 static const char *REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 static const char *USAGE_URL   = "https://api.anthropic.com/api/oauth/usage";
 static const char *OAUTH_BETA  = "oauth-2025-04-20";
-static const char *UA          = "Yoyu/1.8.0";
+static const char *UA          = "Yoyu/1.9.0";
 // OTA self-update (over-the-air from the GitHub release)
 static const char *RELEASES_API =
     "https://api.github.com/repos/DaveEuson/Yoyu/releases/latest";
@@ -432,6 +432,33 @@ static const int BOOT_BTN    = 0;     // BOOT button -> hold to factory reset
 static const int BAT_ADC_PIN = VBAT_PIN;  // via the onboard divider (x3)
 #endif
 static int       batPct      = -1;    // -1 = no battery / hidden
+// The raw reading behind batPct, reported so the gauge can be checked rather
+// than trusted. It matters on the ADC board specifically: with no cell fitted,
+// the charger holds VBAT near the rail and the curve below reads that as a
+// full battery. The two cases are genuinely hard to tell apart from voltage
+// alone -- a charged cell on USB sits there too -- so rather than guess a
+// threshold that could report a real battery as missing, the number is
+// published and the ambiguity documented.
+static int       batMv       = -1;
+
+// Usage credits: what happens after the plan limits run out.
+//
+// Deliberately NOT a Window. Every window answers "how much room before you are
+// stopped"; this answers "how much have you now spent", which is the far side
+// of the same moment. Putting it in the window list would hand it to
+// tightestWindow(), and through that to the mascot -- whose entire job is
+// headroom -- so the character would look healthy while the meter ran.
+static bool     credOn      = false;  // account has credits switched on
+static long     credUsed    = -1;     // minor units (cents); -1 = unknown
+static long     credLimit   = -1;     // minor units; -1 = no cap reported
+static int      credExp     = 2;      // where the decimal point goes
+static char     credCur[8]  = "USD";
+static float    credPct     = 0;
+static bool     credCapped  = false;  // spend limit reached
+// Whether more can still be spent. False with credUsed > 0 is the stopped
+// state -- you spent this, and it has now cut you off -- which is a different
+// thing to say than "you are running on credits".
+static bool     credAvail   = false;
 static bool      batCharging = false;
 static uint8_t   backlight   = 255;   // 0..255
 static bool      showUsed    = false; // false = "% left", true = "% used"
@@ -742,6 +769,7 @@ static void readBattery() {
   uint32_t mv = 0;
   for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BAT_ADC_PIN);
   float v = (mv / 8) * 3.0f / 1000.0f;             // undo the divider
+  batMv = (int)(v * 1000.0f);
   if (v < 2.5f) { batPct = -1; batCharging = false; return; }  // no battery
   int pct;
   if      (v >= 4.15f) pct = 100;
@@ -752,6 +780,30 @@ static void readBattery() {
   batPct = pct > 100 ? 100 : (pct < 0 ? 0 : pct);
   batCharging = v >= 4.25f;                          // held above full = on USB
 #endif
+}
+
+// Minor units as money, without floating point. 340 with exponent 2 is $3.40;
+// the same 340 in a zero-decimal currency is 340. Only the symbol for the
+// currencies likely to turn up is special-cased -- everything else gets its
+// code, which is honest and fits.
+static void fmtMoney(char *out, size_t n, long minor, int exp, const char *cur) {
+  if (minor < 0) { strlcpy(out, "--", n); return; }
+  long div = 1;
+  for (int i = 0; i < exp; i++) div *= 10;
+  const char *sym = !strcmp(cur, "USD") ? "$"
+                  : !strcmp(cur, "EUR") ? "\u20AC"
+                  : !strcmp(cur, "GBP") ? "\u00A3" : "";
+  if (exp <= 0) snprintf(out, n, "%s%ld%s%s", sym, minor, sym[0] ? "" : " ",
+                         sym[0] ? "" : cur);
+  else snprintf(out, n, "%s%ld.%0*ld%s%s", sym, minor / div, exp, minor % div,
+                sym[0] ? "" : " ", sym[0] ? "" : cur);
+}
+
+// Whether the credits line is worth the space. Having credits available is a
+// fact about the account; spending them is a fact about today, and only the
+// second one earns a row on a 2" screen.
+static bool creditsWorthShowing() {
+  return credOn && credUsed > 0;
 }
 
 // Small battery glyph at (x,y) in design space; nothing drawn when no battery
@@ -853,8 +905,16 @@ static void drawMeters() {
   }
 
   // meters: label / big % left / bar / countdown
+  //
+  // Three rows fill the screen exactly, so the credits row has to take one
+  // rather than be squeezed in beside them. It takes the third, and only once
+  // credits are actually being spent -- at which point the plan windows it
+  // displaces are pegged at 100% anyway, and "you are now paying" is the more
+  // useful of the two things competing for that space.
+  const bool showCred = creditsWorthShowing();
+  const int maxRows = showCred ? 2 : 3;
   int y = 58;
-  for (int i = 0; i < nWindows && i < 3; i++) {
+  for (int i = 0; i < nWindows && i < maxRows; i++) {
     Window &w = windows[i];
     float left = 100.0f - w.utilization;
     if (left < 0) left = 0; if (left > 100) left = 100;
@@ -890,6 +950,57 @@ static void drawMeters() {
     y += 82;
   }
 
+  // The credits row. Same shape as a meter and the same polarity: every bar on
+  // this screen means "how much is left". Reading one of them backwards
+  // because it happens to be money would be a trap.
+  if (showCred) {
+    char m1[24], m2[24];
+    float left = 100.0f - credPct;
+    if (left < 0) left = 0;
+    if (credLimit < 0) left = 100;          // no cap reported: nothing to run out of
+    uint16_t fill  = credCapped ? C_CRIT : left <= 10 ? C_CRIT
+                   : left <= 30 ? C_WARN : C_ACC;
+    uint16_t track = credCapped ? C_CRIT_T : left <= 10 ? C_CRIT_T
+                   : left <= 30 ? C_WARN_T : C_ACC_T;
+
+    gfx->setTextSize(mapSz(2));
+    gfx->setTextColor(C_INK);
+    gfx->setCursor(mapX(12), mapY(y));
+    gfx->print("Credits");
+
+    fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+    if (credLimit >= 0) {
+      fmtMoney(m2, sizeof(m2), credLimit, credExp, credCur);
+      snprintf(buf, sizeof(buf), "%s/%s", m1, m2);
+    } else {
+      snprintf(buf, sizeof(buf), "%s", m1);
+    }
+    int16_t cx1, cy1; uint16_t ctw, cth;
+    gfx->setTextSize(mapSz(2));
+    gfx->getTextBounds(buf, 0, 0, &cx1, &cy1, &ctw, &cth);
+    gfx->setCursor(mapX(228) - (int)ctw, mapY(y + 22));
+    gfx->print(buf);
+
+    int barY = y + 44;
+    const int barX = mapX(12), barW = mapLen(216), barH = mapLen(14);
+    gfx->fillRoundRect(barX, mapY(barY), barW, barH, barH / 2, track);
+    int wpx = (int)(barW * left / 100.0f);
+    if (wpx < mapLen(8)) wpx = mapLen(8);
+    gfx->fillRoundRect(barX, mapY(barY), wpx, barH, barH / 2, fill);
+
+    gfx->setTextSize(mapSz(2));
+    gfx->setTextColor(credCapped ? C_CRIT : C_MUTED);
+    gfx->setCursor(mapX(12), mapY(barY + 18));
+    // Say what this row is, because a money figure on a usage screen is
+    // otherwise ambiguous -- it could as easily be a bill as a budget.
+    // Three states worth telling apart, because the action differs: still
+    // running on credits, stopped by the cap, or stopped by something else
+    // (an org turning them off mid-period).
+    gfx->print(credCapped ? "spend limit reached"
+             : !credAvail ? "credits stopped"
+                          : "past your plan limits");
+  }
+
   // footer: how fresh the data is, plus a hint if more windows exist than fit.
   if (lastPushMs) {
     gfx->setTextSize(mapSz(1));
@@ -903,9 +1014,9 @@ static void drawMeters() {
       if (age < 90) gfx->print("updated just now");
       else { snprintf(buf, sizeof(buf), "updated %lum ago", age / 60); gfx->print(buf); }
     }
-    if (nWindowsSeen > 3) {
+    if (nWindowsSeen > maxRows) {
       gfx->setTextColor(C_ACC);
-      snprintf(buf, sizeof(buf), "   +%d more", nWindowsSeen - 3);
+      snprintf(buf, sizeof(buf), "   +%d more", nWindowsSeen - maxRows);
       gfx->print(buf);
     }
   }
@@ -977,10 +1088,20 @@ static void drawFocus() {
       } else {
         char gap[16]; fmtDur(toReset - toEmpty, gap, sizeof(gap));
         snprintf(d, sizeof(d), "runs dry ~%s early", gap);
-        drawCentered(d, 256, 2, (toReset - toEmpty) < 60 ? C_CRIT : C_WARN);
-        fmtDur(toReset, r, sizeof(r));
-        snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
-        drawCentered(d, 286, 1, C_MUTED);
+        // With credits waiting, running dry is not a wall -- it is the point
+        // the cost starts. Same number, different news, so it should not wear
+        // the same red as a hard stop.
+        bool netted = credOn && credAvail;
+        drawCentered(d, 256, 2,
+                     netted ? C_WARN
+                            : ((toReset - toEmpty) < 60 ? C_CRIT : C_WARN));
+        if (netted) {
+          drawCentered("then it comes out of credits", 286, 1, C_ACC);
+        } else {
+          fmtDur(toReset, r, sizeof(r));
+          snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
+          drawCentered(d, 286, 1, C_MUTED);
+        }
       }
       projected = true;
     }
@@ -988,6 +1109,16 @@ static void drawFocus() {
   if (!projected) {
     fmtCountdown(w.resets_at, buf, sizeof(buf));
     drawCentered(buf, 262, 2, C_MUTED);
+  }
+  // Already spending. This is the screen that answers "how am I doing", and
+  // once money is involved that question is no longer only about percentages.
+  if (creditsWorthShowing()) {
+    char m[24];
+    fmtMoney(m, sizeof(m), credUsed, credExp, credCur);
+    char line[48];
+    snprintf(line, sizeof(line), "%s on credits%s", m,
+             credCapped ? " - limit reached" : (credAvail ? "" : " - stopped"));
+    drawCentered(line, 306, 1, credCapped || !credAvail ? C_CRIT : C_ACC);
   }
 }
 
@@ -1876,6 +2007,13 @@ static void checkExhaustion() {
   if (uiScreen == SCREEN_TIMER) return;          // already showing
   if (!screenEnabled(SCREEN_TIMER)) return;      // Timer taken out of the rotation
   if (pairingActive()) return;                   // the one-time code owns the screen
+  // Credits change what running out means. The takeover exists because the
+  // only useful number, once a window is spent, is how long until you can work
+  // again -- but with credits available you never stopped working, you started
+  // paying. Seizing the screen for a countdown to something that is not
+  // blocking you is worse than leaving it alone. Only when credits cannot
+  // absorb it is the reset time the thing you are waiting for.
+  if (credOn && credAvail) return;
   uiScreen = SCREEN_TIMER;
 }
 
@@ -1889,7 +2027,18 @@ static int    alertPct = 90;              // notify at/above this % used
 struct AlertState { char key[24]; bool over; };
 static AlertState alertStates[MAX_WINDOWS] = {};
 
+// Credits get their own two flags rather than a slot in the array above.
+// Every window alert is "you crossed N% of a limit"; these are not that. The
+// first is "you have started paying", which is a threshold of one cent, not of
+// a percentage -- alertPct has nothing to say about it. The second is the cap,
+// which is the moment work actually stops.
+static bool credAlertedSpend = false;
+static bool credAlertedCap   = false;
+
 static bool alertsConfigured() {
+#if defined(YOYU_ALERT_DRYRUN)
+  return true;            // so the logic can be exercised without a topic set
+#endif
   return ntfyTopic.length() > 0 || (poToken.length() > 0 && poUser.length() > 0);
 }
 
@@ -1933,6 +2082,12 @@ static void sendPushover(const char *title, const char *body) {
 
 static void sendAlert(const char *title, const char *body) {
   if (WiFi.status() != WL_CONNECTED) return;
+  // Alerts fail invisibly: nothing arrives on the phone, and the board gives
+  // no sign whether it never fired or the send itself failed. One line.
+  Serial.printf("[alert] %s: %s\n", title, body);
+#if defined(YOYU_ALERT_DRYRUN)
+  return;                 // diagnostic build: log the decision, send nothing
+#endif
   sendNtfy(title, body);
   sendPushover(title, body);
 }
@@ -1960,6 +2115,38 @@ static void checkAlerts() {
       snprintf(body, sizeof(body), "%s recovered (%d%% used)", w.label, used);
       sendAlert("Yoyu", body);
     }
+  }
+
+  // Credits. Deliberately not gated on alertPct: the useful moment is the
+  // first cent of a period, because that is when the thing being consumed
+  // stops being an allowance and starts being money. A percentage threshold
+  // would either fire late or never, depending on how big the cap happens
+  // to be.
+  if (credOn) {
+    char body[96], m1[24], m2[24];
+    if (credUsed > 0 && credAvail && !credAlertedSpend) {
+      credAlertedSpend = true;
+      fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+      if (credLimit >= 0) {
+        fmtMoney(m2, sizeof(m2), credLimit, credExp, credCur);
+        snprintf(body, sizeof(body),
+                 "Past your plan limits - now on credits, %s of %s", m1, m2);
+      } else {
+        snprintf(body, sizeof(body),
+                 "Past your plan limits - now on credits, %s so far", m1);
+      }
+      sendAlert("Yoyu", body);
+    }
+    if (credCapped && !credAlertedCap) {
+      credAlertedCap = true;
+      fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+      snprintf(body, sizeof(body), "Credit limit reached (%s) - usage paused",
+               m1);
+      sendAlert("Yoyu", body);
+    }
+    // Both reset together when the period rolls over and the meter goes back
+    // to zero, so the next period can announce itself too.
+    if (credUsed <= 0) { credAlertedSpend = false; credAlertedCap = false; }
   }
 }
 
@@ -2084,6 +2271,23 @@ static void handleStatus() {
   } else {
     doc["battery"] = (const char *)nullptr;
   }
+#if HAS_BATTERY_ADC
+  // Only meaningful where a percentage is inferred from a voltage. The PMIC
+  // board reports a real gauge and has nothing to second-guess.
+  if (batMv >= 0) doc["battery_mv"] = batMv;
+#endif
+  if (credOn) {
+    JsonObject cr = doc["credits"].to<JsonObject>();
+    cr["used_minor"]  = credUsed;
+    cr["limit_minor"] = credLimit;
+    cr["exponent"]    = credExp;
+    cr["currency"]    = credCur;
+    cr["percent"]     = credPct;
+    cr["limit_reached"] = credCapped;
+    cr["available"]     = credAvail;
+  } else {
+    doc["credits"] = (const char *)nullptr;
+  }
   doc["pairing"] = pairingActive();
   JsonObject rc = doc["release_check"].to<JsonObject>();
   rc["ok"]          = tagFetchOk;
@@ -2162,6 +2366,26 @@ static void handlePush() {
     dst.resets_at = parseISO(w["resets_at"] | (const char *)nullptr);
   }
   strlcpy(plan, doc["plan"] | "", sizeof(plan));
+  // Optional: usage credits. An older companion omits the key entirely, and an
+  // account without credits sends nothing -- both mean "show nothing", which is
+  // not the same as "spent nothing", so the flag is what gates the display.
+  if (doc["credits"].is<JsonObject>()) {
+    JsonObject cr = doc["credits"];
+    credOn    = true;
+    credUsed  = cr["used_minor"]  | -1L;
+    credLimit = cr["limit_minor"] | -1L;
+    credExp   = cr["exponent"]    | 2;
+    if (credExp < 0 || credExp > 4) credExp = 2;
+    strlcpy(credCur, cr["currency"] | "USD", sizeof(credCur));
+    float cp  = cr["percent"] | 0.0f;
+    credPct   = cp < 0 ? 0 : (cp > 100 ? 100 : cp);
+    credCapped = cr["limit_reached"] | false;
+    // Older companions omit it; assume still available so the wording does not
+    // claim a stop that may not have happened.
+    credAvail  = cr["available"] | true;
+  } else {
+    credOn = false;
+  }
   // Optional: per-project shares, from the companion reading Claude Code's own
   // session logs. An older companion simply omits the key — leave the last set
   // standing rather than blanking the screen on every push.
@@ -3251,6 +3475,11 @@ static void handleAlertsPage() {
       "<h2>Phone alerts</h2>"
       "<p>Get a push when a window gets high. Easiest is <b>ntfy</b>: install "
       "the free ntfy app, pick any topic name, and enter it below.</p>"
+      "<p class=muted>You will also be told the first time a billing period "
+      "goes past your plan limits and starts spending usage credits, and "
+      "again if the spend limit is reached. Those two are not tied to the "
+      "percentage below: the useful moment is the first cent, whatever the "
+      "cap happens to be.</p>"
       "<form method=POST action=/alerts>"
       "<label>ntfy topic</label>"
       "<input name=ntfy value='");
