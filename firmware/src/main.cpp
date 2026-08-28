@@ -2919,13 +2919,44 @@ static bool fetchUsage(bool allowRefresh) {
   // a new window silently invisible on a self-hosted board.
   static const char *const ORDER[] = {
       "five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus",
-      "seven_day_fable", "seven_day_oauth_apps", "extra_usage"};
+      "seven_day_fable", "seven_day_oauth_apps"};
+
+  // Not usage windows, whatever they look like.
+  //
+  // extra_usage was in ORDER above, which is how a self-hosted board came to
+  // show "Extra usage 100%" as a meter. It is money, and money routed through
+  // the window list reaches tightestWindow() and through that the mascot --
+  // so the board announced "out of tokens" with the real windows at 53% and
+  // 6%. The companion learned this the hard way; the board polls Anthropic
+  // itself and had learned nothing, which is the whole bug: two parsers, one
+  // of them fixed.
+  auto notAWindow = [](const char *k) {
+    return !strcmp(k, "extra_usage") || !strcmp(k, "spend") ||
+           !strcmp(k, "limits") || !strcmp(k, "member_dashboard_available");
+  };
+  // Whether ORDER knows this key. Used both for ordering and for deciding
+  // whether an unrecognised entry has earned a slot.
+  auto known = [&](const char *k) {
+    for (const char *o : ORDER) if (!strcmp(o, k)) return true;
+    return false;
+  };
+
   nWindows = 0;
   nWindowsSeen = 0;
 
   // Adds one window if it looks like a usage object; counts it either way.
   auto take = [&](const char *key, JsonVariant v) {
+    if (notAWindow(key)) return;
     if (!v.is<JsonObject>() || v["utilization"].isNull()) return;
+    // The endpoint returns internal codenames beside the real windows --
+    // nimbus_quill, tangelo, amber_ladder. A board with three meter slots was
+    // spending one on "Nimbus Quill 0%". Conservative, because guessing wrong
+    // hides a real limit: a known key always shows, an unknown key with a
+    // reset time shows (that is what a newly shipped model looks like), and
+    // only an unknown key with no reset and nothing used is dropped.
+    if (!known(key) && v["utilization"].as<float>() <= 0.0f &&
+        v["resets_at"].isNull() && v["resetsAt"].isNull())
+      return;
     nWindowsSeen++;
     if (nWindows >= MAX_WINDOWS) return;
     Window &w = windows[nWindows++];
@@ -2939,11 +2970,36 @@ static bool fetchUsage(bool allowRefresh) {
   };
 
   for (const char *key : ORDER) take(key, root[key]);
-  for (JsonPair kv : root) {                   // then anything not listed above
-    bool known = false;
-    for (const char *key : ORDER)
-      if (!strcmp(kv.key().c_str(), key)) { known = true; break; }
-    if (!known) take(kv.key().c_str(), kv.value());
+  for (JsonPair kv : root)                     // then anything not listed above
+    if (!known(kv.key().c_str())) take(kv.key().c_str(), kv.value());
+
+  // Credits, from the same response. A self-hosted board is the one that runs
+  // with no computer involved, so it is exactly the board that cannot be told
+  // about money by anything else -- and it was the only one showing nothing.
+  //
+  // "enabled" says whether more can be SPENT, not whether any ever was, so
+  // spend already made still counts once credits are switched off.
+  JsonVariant sp = root["spend"];
+  credOn = false;
+  if (sp.is<JsonObject>() && !sp["used"]["amount_minor"].isNull()) {
+    long um = sp["used"]["amount_minor"].as<long>();
+    bool en = sp["enabled"] | false;
+    if (en || um > 0) {
+      credOn     = true;
+      credUsed   = um;
+      credLimit  = sp["limit"]["amount_minor"].isNull()
+                 ? -1L : sp["limit"]["amount_minor"].as<long>();
+      credExp    = sp["used"]["exponent"] | 2;
+      if (credExp < 0 || credExp > 4) credExp = 2;
+      strlcpy(credCur, sp["used"]["currency"] | "USD", sizeof(credCur));
+      float cp   = sp["percent"].isNull()
+                 ? (credLimit > 0 ? 100.0f * um / credLimit : 0.0f)
+                 : sp["percent"].as<float>();
+      credPct    = cp < 0 ? 0 : (cp > 100 ? 100 : cp);
+      const char *sev = sp["severity"] | "";
+      credCapped = !strcmp(sev, "critical");
+      credAvail  = en;
+    }
   }
   if (nWindows == 0) {
     strlcpy(pollStatus, "no usage windows", sizeof(pollStatus));
