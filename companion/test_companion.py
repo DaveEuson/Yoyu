@@ -784,5 +784,87 @@ class CreditsFromUsageTests(unittest.TestCase):
         self.assertEqual(c["currency"], "GBP")
 
 
+class Reject401Tests(_QuietTest):
+    """A 401 whose expiresAt still looks fine.
+
+    Refresh tokens rotate, so anything else using the same login can kill this
+    access token while our own clock still says it is good. Before this, the
+    clock-based check handed back the same dead token every cycle and the
+    boards stayed dark until somebody noticed and ran `claude /login`. Caught
+    in the wild, not in a test.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.forced = []          # every valid_token(force=) we were asked for
+        self.fetches = 0
+        self.reads = 0
+        creds = {"accessToken": "dead", "refreshToken": "r",
+                 "expiresAt": 9e18, "_raw": {}, "subscriptionType": "max"}
+
+        def fake_read():
+            self.reads += 1
+            return dict(creds), (lambda o: None)
+
+        def fake_valid(c, save, force=False):
+            self.forced.append(force)
+            return "fresh" if force else "dead"
+
+        for name, repl in (("read_creds", fake_read),
+                           ("valid_token", fake_valid)):
+            orig = getattr(companion, name)
+            setattr(companion, name, repl)
+            self.addCleanup(setattr, companion, name, orig)
+
+    def _fetch(self, results):
+        """results: list of "ok" or an HTTP code to raise."""
+        def f(token):
+            self.fetches += 1
+            r = results[min(self.fetches - 1, len(results) - 1)]
+            if r == "ok":
+                return {"five_hour": {"utilization": 5.0,
+                                      "resets_at": "2026-08-27T00:00:00Z"}}
+            raise companion.urllib.error.HTTPError(
+                companion.USAGE_URL, r, "no", {}, None)
+        orig = companion.fetch_usage
+        companion.fetch_usage = f
+        self.addCleanup(setattr, companion, "fetch_usage", orig)
+
+    def test_a_401_forces_one_refresh_and_retries(self):
+        self._fetch([401, "ok"])
+        windows, plan, credits = companion.get_live_windows()
+        self.assertEqual(self.fetches, 2)
+        self.assertEqual(self.forced, [False, True])   # cached, then forced
+        self.assertEqual([w["key"] for w in windows], ["five_hour"])
+
+    def test_creds_are_re_read_before_the_forced_refresh(self):
+        # The first call may already have written a new refresh token back;
+        # refreshing with the stale one in memory spends a dead token.
+        self._fetch([401, "ok"])
+        companion.get_live_windows()
+        self.assertEqual(self.reads, 2)
+
+    def test_a_second_401_gives_up_and_says_what_to_do(self):
+        self._fetch([401, 401])
+        with self.assertRaises(companion.LiveUnavailable) as cm:
+            companion.get_live_windows()
+        self.assertEqual(self.fetches, 2)              # exactly two, no loop
+        self.assertIn("/login", str(cm.exception))
+
+    def test_other_errors_are_not_retried(self):
+        # A 429 must back off, not burn a refresh token retrying.
+        self._fetch([429, "ok"])
+        with self.assertRaises(companion.LiveUnavailable) as cm:
+            companion.get_live_windows()
+        self.assertEqual(self.fetches, 1)
+        self.assertTrue(cm.exception.rate_limited)
+
+    def test_a_healthy_call_never_forces_a_refresh(self):
+        self._fetch(["ok"])
+        companion.get_live_windows()
+        self.assertEqual(self.fetches, 1)
+        self.assertEqual(self.forced, [False])
+
+
 if __name__ == "__main__":
     unittest.main()

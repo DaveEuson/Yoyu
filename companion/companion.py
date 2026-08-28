@@ -166,10 +166,17 @@ def _parse_creds(raw):
     }
 
 
-def valid_token(creds, save_fn):
-    """Return a usable access token, refreshing only if expired. None on fail."""
+def valid_token(creds, save_fn, force=False):
+    """Return a usable access token, refreshing if expired. None on fail.
+
+    `force` refreshes regardless of the clock. Needed because expiresAt is not
+    the only way a token dies: refresh tokens rotate, so anything else using
+    this login can invalidate ours while our own timestamp still says it is
+    good. In that state the check below happily hands back a dead token
+    forever.
+    """
     exp_s = creds["expiresAt"] / 1000.0 if creds["expiresAt"] else 0
-    if exp_s and exp_s - REFRESH_MARGIN > time.time():
+    if not force and exp_s and exp_s - REFRESH_MARGIN > time.time():
         return creds["accessToken"]            # still fresh — pure read
     if not creds["refreshToken"]:
         return creds["accessToken"] if not exp_s else None
@@ -367,31 +374,57 @@ def get_live_windows():
     creds, save_fn = read_creds()
     if not creds:
         return None
-    token = valid_token(creds, save_fn)
-    if not token:
-        raise LiveUnavailable(
-            "Claude Code's login here needs signing in again — run `claude`, "
-            "then /login")
-    try:
-        raw = fetch_usage(token)
-    except urllib.error.HTTPError as exc:
-        retry_after = 0
+    # Two attempts at most. The second only happens on a 401, and only after
+    # forcing a refresh: a rejected token whose expiresAt still looks fine
+    # means it was rotated out from under us, not that it aged out, and the
+    # clock-based check will keep returning the same dead token until somebody
+    # notices the boards have gone quiet and runs `claude /login` by hand.
+    # One refresh fixes it without anyone being told anything.
+    raw = None
+    for attempt in (0, 1):
+        if attempt:
+            # Re-read first: the earlier call may already have written a new
+            # refresh token back, and refreshing with the stale one in memory
+            # would spend a token that is no longer current.
+            creds, save_fn = read_creds()
+            if not creds:
+                raise LiveUnavailable("Claude Code's login went away mid-read")
+        token = valid_token(creds, save_fn, force=bool(attempt))
+        if not token:
+            raise LiveUnavailable(
+                "Claude Code's login here needs signing in again — run "
+                "`claude`, then /login")
         try:
-            retry_after = int(exc.headers.get("Retry-After", 0) or 0)
-        except (TypeError, ValueError):
-            pass
-        detail = ""
-        try:
-            detail = exc.read().decode("utf-8", "replace")[:200]
-        except Exception:  # noqa: BLE001
-            pass
-        raise LiveUnavailable(
-            f"usage endpoint returned HTTP {exc.code}"
-            + (f", retry after {retry_after}s" if retry_after else "")
-            + (f" — {detail}" if detail else ""),
-            retry_after=retry_after, rate_limited=(exc.code == 429))
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise LiveUnavailable(f"couldn't read usage: {exc}")
+            raw = fetch_usage(token)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code == 401 and attempt == 0:
+                print("access token was rejected; refreshing and retrying once",
+                      file=sys.stderr)
+                continue
+            retry_after = 0
+            try:
+                retry_after = int(exc.headers.get("Retry-After", 0) or 0)
+            except (TypeError, ValueError):
+                pass
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            extra = ""
+            if exc.code == 401:
+                # Second 401 after a real refresh: the refresh token is spent
+                # too, and nothing here can mint another one.
+                extra = (" — a refresh did not help, so this login has been "
+                         "signed out elsewhere. Run `claude`, then /login")
+            raise LiveUnavailable(
+                f"usage endpoint returned HTTP {exc.code}"
+                + (f", retry after {retry_after}s" if retry_after else "")
+                + (f" — {detail}" if detail else "") + extra,
+                retry_after=retry_after, rate_limited=(exc.code == 429))
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise LiveUnavailable(f"couldn't read usage: {exc}")
     windows = windows_from_usage(raw)
     if not windows:
         raise LiveUnavailable("usage response had no windows")
