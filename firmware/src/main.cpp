@@ -432,6 +432,14 @@ static const int BOOT_BTN    = 0;     // BOOT button -> hold to factory reset
 static const int BAT_ADC_PIN = VBAT_PIN;  // via the onboard divider (x3)
 #endif
 static int       batPct      = -1;    // -1 = no battery / hidden
+// The raw reading behind batPct, reported so the gauge can be checked rather
+// than trusted. It matters on the ADC board specifically: with no cell fitted,
+// the charger holds VBAT near the rail and the curve below reads that as a
+// full battery. The two cases are genuinely hard to tell apart from voltage
+// alone -- a charged cell on USB sits there too -- so rather than guess a
+// threshold that could report a real battery as missing, the number is
+// published and the ambiguity documented.
+static int       batMv       = -1;
 
 // Usage credits: what happens after the plan limits run out.
 //
@@ -761,6 +769,7 @@ static void readBattery() {
   uint32_t mv = 0;
   for (int i = 0; i < 8; i++) mv += analogReadMilliVolts(BAT_ADC_PIN);
   float v = (mv / 8) * 3.0f / 1000.0f;             // undo the divider
+  batMv = (int)(v * 1000.0f);
   if (v < 2.5f) { batPct = -1; batCharging = false; return; }  // no battery
   int pct;
   if      (v >= 4.15f) pct = 100;
@@ -1079,10 +1088,20 @@ static void drawFocus() {
       } else {
         char gap[16]; fmtDur(toReset - toEmpty, gap, sizeof(gap));
         snprintf(d, sizeof(d), "runs dry ~%s early", gap);
-        drawCentered(d, 256, 2, (toReset - toEmpty) < 60 ? C_CRIT : C_WARN);
-        fmtDur(toReset, r, sizeof(r));
-        snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
-        drawCentered(d, 286, 1, C_MUTED);
+        // With credits waiting, running dry is not a wall -- it is the point
+        // the cost starts. Same number, different news, so it should not wear
+        // the same red as a hard stop.
+        bool netted = credOn && credAvail;
+        drawCentered(d, 256, 2,
+                     netted ? C_WARN
+                            : ((toReset - toEmpty) < 60 ? C_CRIT : C_WARN));
+        if (netted) {
+          drawCentered("then it comes out of credits", 286, 1, C_ACC);
+        } else {
+          fmtDur(toReset, r, sizeof(r));
+          snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
+          drawCentered(d, 286, 1, C_MUTED);
+        }
       }
       projected = true;
     }
@@ -1090,6 +1109,16 @@ static void drawFocus() {
   if (!projected) {
     fmtCountdown(w.resets_at, buf, sizeof(buf));
     drawCentered(buf, 262, 2, C_MUTED);
+  }
+  // Already spending. This is the screen that answers "how am I doing", and
+  // once money is involved that question is no longer only about percentages.
+  if (creditsWorthShowing()) {
+    char m[24];
+    fmtMoney(m, sizeof(m), credUsed, credExp, credCur);
+    char line[48];
+    snprintf(line, sizeof(line), "%s on credits%s", m,
+             credCapped ? " - limit reached" : (credAvail ? "" : " - stopped"));
+    drawCentered(line, 306, 1, credCapped || !credAvail ? C_CRIT : C_ACC);
   }
 }
 
@@ -1978,6 +2007,13 @@ static void checkExhaustion() {
   if (uiScreen == SCREEN_TIMER) return;          // already showing
   if (!screenEnabled(SCREEN_TIMER)) return;      // Timer taken out of the rotation
   if (pairingActive()) return;                   // the one-time code owns the screen
+  // Credits change what running out means. The takeover exists because the
+  // only useful number, once a window is spent, is how long until you can work
+  // again -- but with credits available you never stopped working, you started
+  // paying. Seizing the screen for a countdown to something that is not
+  // blocking you is worse than leaving it alone. Only when credits cannot
+  // absorb it is the reset time the thing you are waiting for.
+  if (credOn && credAvail) return;
   uiScreen = SCREEN_TIMER;
 }
 
@@ -2235,6 +2271,11 @@ static void handleStatus() {
   } else {
     doc["battery"] = (const char *)nullptr;
   }
+#if HAS_BATTERY_ADC
+  // Only meaningful where a percentage is inferred from a voltage. The PMIC
+  // board reports a real gauge and has nothing to second-guess.
+  if (batMv >= 0) doc["battery_mv"] = batMv;
+#endif
   if (credOn) {
     JsonObject cr = doc["credits"].to<JsonObject>();
     cr["used_minor"]  = credUsed;
