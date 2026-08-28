@@ -39,7 +39,9 @@ class WindowLabelTests(unittest.TestCase):
                          "Weekly (New Model)")
 
     def test_unrelated_key_falls_back_to_title_case(self):
-        self.assertEqual(companion._window_label("extra_usage"), "Extra usage")
+        # extra_usage used to be the example here. It is no longer a window at
+        # all -- it is money, excluded by name -- and the case below already
+        # covers the fallback this test is about.
         self.assertEqual(companion._window_label("some_future_thing"),
                          "Some Future Thing")
 
@@ -704,6 +706,40 @@ class CreditsFromUsageTests(unittest.TestCase):
         self.assertIsNone(companion.credits_from_usage(self._spend(0, enabled=False)))
         self.assertIsNone(companion.credits_from_usage({}))
         self.assertIsNone(companion.credits_from_usage(None))
+
+    def test_spend_still_shows_after_credits_are_switched_off(self):
+        """Found on a live account that had gone over: $41.24 of a $40 cap with
+        enabled=false, and the first version of this returned None.
+
+        "enabled: false" means credits can no longer be SPENT -- the cap was
+        hit, or an org disabled them. It does not mean the account never had
+        any, and money already gone is still money gone. Hiding it at exactly
+        the moment the figure matters most defeats the feature.
+        """
+        c = companion.credits_from_usage(
+            self._spend(4124, limit=4000, severity="critical", enabled=False,
+                        percent=100))
+        self.assertIsNotNone(c)
+        self.assertEqual(c["used_minor"], 4124)
+        self.assertTrue(c["limit_reached"])
+        self.assertFalse(c["available"])
+
+    def test_extra_usage_never_becomes_a_window_even_when_it_has_a_number(self):
+        """The bug the account going over actually exposed.
+
+        extra_usage carries utilization: null only while UNUSED. Once credits
+        are spent it reports a real number, sails through the null check into
+        the window list, becomes the tightest window and drives the mascot --
+        so the board showed "out of tokens" with the plan windows at 10% and
+        1%. Excluding it cannot depend on a field's value.
+        """
+        keys = [w["key"] for w in companion.windows_from_usage({
+            "five_hour": {"utilization": 10.0, "resets_at": "2026-08-26T00:00:00Z"},
+            "extra_usage": {"utilization": 100.0, "is_enabled": False,
+                            "used_credits": 4124.0},
+            "spend": {"percent": 100, "enabled": False},
+        })]
+        self.assertEqual(keys, ["five_hour"])
 
     def test_a_malformed_spend_block_is_ignored_not_guessed(self):
         self.assertIsNone(companion.credits_from_usage({"spend": {"enabled": True}}))

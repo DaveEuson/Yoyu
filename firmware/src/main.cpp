@@ -447,6 +447,10 @@ static int      credExp     = 2;      // where the decimal point goes
 static char     credCur[8]  = "USD";
 static float    credPct     = 0;
 static bool     credCapped  = false;  // spend limit reached
+// Whether more can still be spent. False with credUsed > 0 is the stopped
+// state -- you spent this, and it has now cut you off -- which is a different
+// thing to say than "you are running on credits".
+static bool     credAvail   = false;
 static bool      batCharging = false;
 static uint8_t   backlight   = 255;   // 0..255
 static bool      showUsed    = false; // false = "% left", true = "% used"
@@ -980,7 +984,12 @@ static void drawMeters() {
     gfx->setCursor(mapX(12), mapY(barY + 18));
     // Say what this row is, because a money figure on a usage screen is
     // otherwise ambiguous -- it could as easily be a bill as a budget.
-    gfx->print(credCapped ? "spend limit reached" : "past your plan limits");
+    // Three states worth telling apart, because the action differs: still
+    // running on credits, stopped by the cap, or stopped by something else
+    // (an org turning them off mid-period).
+    gfx->print(credCapped ? "spend limit reached"
+             : !credAvail ? "credits stopped"
+                          : "past your plan limits");
   }
 
   // footer: how fresh the data is, plus a hint if more windows exist than fit.
@@ -1982,7 +1991,18 @@ static int    alertPct = 90;              // notify at/above this % used
 struct AlertState { char key[24]; bool over; };
 static AlertState alertStates[MAX_WINDOWS] = {};
 
+// Credits get their own two flags rather than a slot in the array above.
+// Every window alert is "you crossed N% of a limit"; these are not that. The
+// first is "you have started paying", which is a threshold of one cent, not of
+// a percentage -- alertPct has nothing to say about it. The second is the cap,
+// which is the moment work actually stops.
+static bool credAlertedSpend = false;
+static bool credAlertedCap   = false;
+
 static bool alertsConfigured() {
+#if defined(YOYU_ALERT_DRYRUN)
+  return true;            // so the logic can be exercised without a topic set
+#endif
   return ntfyTopic.length() > 0 || (poToken.length() > 0 && poUser.length() > 0);
 }
 
@@ -2026,6 +2046,12 @@ static void sendPushover(const char *title, const char *body) {
 
 static void sendAlert(const char *title, const char *body) {
   if (WiFi.status() != WL_CONNECTED) return;
+  // Alerts fail invisibly: nothing arrives on the phone, and the board gives
+  // no sign whether it never fired or the send itself failed. One line.
+  Serial.printf("[alert] %s: %s\n", title, body);
+#if defined(YOYU_ALERT_DRYRUN)
+  return;                 // diagnostic build: log the decision, send nothing
+#endif
   sendNtfy(title, body);
   sendPushover(title, body);
 }
@@ -2053,6 +2079,38 @@ static void checkAlerts() {
       snprintf(body, sizeof(body), "%s recovered (%d%% used)", w.label, used);
       sendAlert("Yoyu", body);
     }
+  }
+
+  // Credits. Deliberately not gated on alertPct: the useful moment is the
+  // first cent of a period, because that is when the thing being consumed
+  // stops being an allowance and starts being money. A percentage threshold
+  // would either fire late or never, depending on how big the cap happens
+  // to be.
+  if (credOn) {
+    char body[96], m1[24], m2[24];
+    if (credUsed > 0 && credAvail && !credAlertedSpend) {
+      credAlertedSpend = true;
+      fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+      if (credLimit >= 0) {
+        fmtMoney(m2, sizeof(m2), credLimit, credExp, credCur);
+        snprintf(body, sizeof(body),
+                 "Past your plan limits - now on credits, %s of %s", m1, m2);
+      } else {
+        snprintf(body, sizeof(body),
+                 "Past your plan limits - now on credits, %s so far", m1);
+      }
+      sendAlert("Yoyu", body);
+    }
+    if (credCapped && !credAlertedCap) {
+      credAlertedCap = true;
+      fmtMoney(m1, sizeof(m1), credUsed, credExp, credCur);
+      snprintf(body, sizeof(body), "Credit limit reached (%s) - usage paused",
+               m1);
+      sendAlert("Yoyu", body);
+    }
+    // Both reset together when the period rolls over and the meter goes back
+    // to zero, so the next period can announce itself too.
+    if (credUsed <= 0) { credAlertedSpend = false; credAlertedCap = false; }
   }
 }
 
@@ -2185,6 +2243,7 @@ static void handleStatus() {
     cr["currency"]    = credCur;
     cr["percent"]     = credPct;
     cr["limit_reached"] = credCapped;
+    cr["available"]     = credAvail;
   } else {
     doc["credits"] = (const char *)nullptr;
   }
@@ -2280,6 +2339,9 @@ static void handlePush() {
     float cp  = cr["percent"] | 0.0f;
     credPct   = cp < 0 ? 0 : (cp > 100 ? 100 : cp);
     credCapped = cr["limit_reached"] | false;
+    // Older companions omit it; assume still available so the wording does not
+    // claim a stop that may not have happened.
+    credAvail  = cr["available"] | true;
   } else {
     credOn = false;
   }
@@ -3372,6 +3434,11 @@ static void handleAlertsPage() {
       "<h2>Phone alerts</h2>"
       "<p>Get a push when a window gets high. Easiest is <b>ntfy</b>: install "
       "the free ntfy app, pick any topic name, and enter it below.</p>"
+      "<p class=muted>You will also be told the first time a billing period "
+      "goes past your plan limits and starts spending usage credits, and "
+      "again if the spend limit is reached. Those two are not tied to the "
+      "percentage below: the useful moment is the first cent, whatever the "
+      "cap happens to be.</p>"
       "<form method=POST action=/alerts>"
       "<label>ntfy topic</label>"
       "<input name=ntfy value='");

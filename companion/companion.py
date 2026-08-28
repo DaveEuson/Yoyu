@@ -71,7 +71,6 @@ WINDOW_LABELS = {
     "seven_day_opus": "Weekly (Opus)",
     "seven_day_fable": "Weekly (Fable)",
     "seven_day_oauth_apps": "Weekly (connected apps)",
-    "extra_usage": "Extra usage",
 }
 
 # Fallback-only: rough token budgets if we must estimate from logs. Anthropic
@@ -238,10 +237,18 @@ def _window_label(key):
     return key.replace("_", " ").title()
 
 
+# Not usage windows, whatever they look like. "spend" is an object of a
+# different shape entirely, and "extra_usage" is money -- see
+# credits_from_usage() for why it must never reach the window list.
+NOT_WINDOWS = ("extra_usage", "spend", "limits", "member_dashboard_available")
+
+
 def windows_from_usage(raw):
     order = list(WINDOW_LABELS)
     out = []
     for key, value in (raw or {}).items():
+        if key in NOT_WINDOWS:
+            continue
         if not isinstance(value, dict):
             continue
         util = value.get("utilization")
@@ -299,7 +306,7 @@ def credits_from_usage(raw):
     is the common case and should show nothing at all.
     """
     sp = (raw or {}).get("spend")
-    if not isinstance(sp, dict) or not sp.get("enabled"):
+    if not isinstance(sp, dict):
         return None
     used = sp.get("used") or {}
     limit = sp.get("limit") or {}
@@ -310,6 +317,15 @@ def credits_from_usage(raw):
         limit_minor = (int(limit["amount_minor"])
                        if limit.get("amount_minor") is not None else None)
     except (TypeError, ValueError):
+        return None
+    # "enabled: false" means credits can no longer be SPENT -- the cap was hit,
+    # or an org switched them off. It does not mean the account never had any,
+    # and treating the two the same hid $41.24 of real spend at the exact
+    # moment the figure mattered most. Money already gone is still money gone.
+    #
+    # So: nothing to show only when there is genuinely nothing -- not available
+    # AND nothing spent.
+    if not sp.get("enabled") and not used_minor:
         return None
     pct = sp.get("percent")
     if pct is None and limit_minor:
@@ -323,6 +339,9 @@ def credits_from_usage(raw):
         "currency": used.get("currency") or "USD",
         "percent": round(float(pct), 1) if pct is not None else None,
         "limit_reached": bool(sp.get("severity") == "critical"),
+        # Whether more can still be spent. False with a non-zero used_minor is
+        # the stopped state: you spent this, and it has now cut you off.
+        "available": bool(sp.get("enabled")),
     }
     return out
 
