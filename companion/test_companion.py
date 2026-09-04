@@ -866,5 +866,50 @@ class Reject401Tests(_QuietTest):
         self.assertEqual(self.forced, [False])
 
 
+class InstallTests(_QuietTest):
+    """Where the login item points.
+
+    The bug this replaced: autostart recorded sys.executable, so a binary run
+    straight out of Downloads registered that path, and emptying Downloads
+    broke start-up with nothing on screen to say so.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.exe = os.path.join(self.dir, "YoyuCompanion.exe")
+        orig = companion.installed_exe
+        companion.installed_exe = lambda: self.exe
+        self.addCleanup(setattr, companion, "installed_exe", orig)
+
+    def test_launch_argv_prefers_the_installed_copy(self):
+        open(self.exe, "wb").write(b"x")
+        self.assertTrue(companion.is_installed())
+        self.assertEqual(companion._launch_argv(), [self.exe])
+
+    def test_launch_argv_falls_back_when_not_installed(self):
+        # Nothing installed: the old behaviour is still the right one, because
+        # there is nowhere better to point.
+        self.assertFalse(companion.is_installed())
+        self.assertNotEqual(companion._launch_argv(), [self.exe])
+
+    def test_install_from_source_refuses_instead_of_pretending(self):
+        # Not frozen, so there is no single file to copy. Silently doing
+        # nothing would leave someone thinking they had installed it.
+        with self.assertRaises(RuntimeError) as cm:
+            companion.install_app()
+        self.assertIn("--startup", str(cm.exception))
+
+    def test_stale_upgrade_copy_is_swept(self):
+        stale = self.exe + ".old"
+        open(stale, "wb").write(b"x" * 10)
+        self.assertEqual(companion.sweep_stale_install(), stale)
+        self.assertFalse(os.path.exists(stale))
+
+    def test_sweep_is_quiet_when_there_is_nothing_to_sweep(self):
+        self.assertIsNone(companion.sweep_stale_install())
+
+
 if __name__ == "__main__":
     unittest.main()

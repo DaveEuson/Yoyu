@@ -88,6 +88,11 @@ No tools, no command line:
 3. **See your usage.** Download the companion app from that page and open it.
    It finds the board on your network and feeds it your real usage, or you can
    make the board self-contained (below).
+4. **Install it, if you want it permanent.** Run it once with `--install`, or
+   pick **Install on this computer** from the tray menu. That copies the app
+   somewhere stable, adds it to your applications menu, and offers to start it
+   when you log in. Without this it runs from wherever you downloaded it, and
+   emptying that folder stops it coming back.
 
 ## Running two
 
