@@ -25,6 +25,63 @@ When in doubt, use **push mode**: just run the companion with no arguments.
 
 ---
 
+## Windows or macOS blocks the companion download
+
+The companion is not code-signed, so every operating system treats it as an
+unknown program. There are three versions of this, and they need different
+things from you.
+
+**"Windows protected your PC" (SmartScreen).** The mildest one. Click **More
+info**, then **Run anyway**. It appears once.
+
+**Windows Defender deletes it or says "potentially unwanted software".** Harsher
+and less obvious, because the file can vanish from your Downloads folder with
+only a notification. This is a false positive that unsigned
+[PyInstaller](https://pyinstaller.org) programs attract: the launcher unpacks
+itself to a temporary folder at startup, which is also what some malware does,
+and signature-based scanners cannot tell the difference without a signature to
+check.
+
+Before doing anything about it, confirm you have the real file. Releases newer
+than v1.9.1 publish a `SHA256SUMS.txt` next to the binaries. Download it, then:
+
+```powershell
+(Get-FileHash .\YoyuCompanion-windows.exe -Algorithm SHA256).Hash.ToLower()
+```
+
+`Get-FileHash` prints uppercase and the sums file is lowercase, which is what
+the `.ToLower()` is for. On macOS or Linux, `shasum -a 256 -c SHA256SUMS.txt`
+checks every file you downloaded in one go.
+
+If your hash is the one listed for that release, the file is what the build
+produced. v1.9.1 and earlier have no sums file, and there is no way to add one
+after the fact, so if you are on one of those the honest answer is that you
+cannot check.
+
+Once the file checks out, add an exclusion under
+**Windows Security > Virus & threat protection > Manage settings > Exclusions**.
+Exclude the installed copy at `%LOCALAPPDATA%\Programs\Yoyu` rather than your
+whole Downloads folder.
+
+If you would rather not add an exclusion, there is nothing wrong with running
+the companion from source. It needs Python and two small libraries, and it is
+the same code:
+
+```
+pip install pystray pillow certifi
+python companion/tray.py
+```
+
+**macOS refuses to open it.** Right-click the download and choose **Open**,
+which offers a button that plain double-clicking does not. On newer versions,
+**System Settings > Privacy & Security** shows an **Open Anyway** button after
+the first refusal.
+
+Code signing is what actually removes all three, and it needs a paid
+certificate from Apple and a Windows CA. It is not done yet.
+
+---
+
 ## The board says "login expired – re-pair"
 
 **What it means:** you're in paired mode, and the login stored on the board
