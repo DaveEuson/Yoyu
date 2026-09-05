@@ -30,6 +30,7 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import socket
 import ssl
 import subprocess
@@ -1163,18 +1164,207 @@ def top_up_token(url, key=None):
     return bool(res.get("ok"))
 
 
-# --------------------------------------------------------- run on every login
+# --------------------------------------------------------- install and login
 
 INSTALLED_MARKER = os.path.expanduser("~/.claudetracker-companion-installed")
 
+APP_NAME = "Yoyu Companion"
+
+
+def install_dir():
+    """Where the app lives once installed.
+
+    Per-user, so nothing needs an administrator. On Windows that is the same
+    place winget and VS Code put user installs; on Linux it follows the XDG
+    convention for a binary you did not get from a package manager.
+    """
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "Programs", "Yoyu")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Yoyu")
+    return os.path.expanduser("~/.local/share/yoyu")
+
+
+def installed_exe():
+    name = "YoyuCompanion.exe" if sys.platform == "win32" else "YoyuCompanion"
+    return os.path.join(install_dir(), name)
+
+
+def is_installed():
+    return os.path.isfile(installed_exe())
+
+
+def sweep_stale_install():
+    """Delete the copy an upgrade had to move aside.
+
+    Windows will not let a running .exe be overwritten, so install_app renames
+    the old one to .old and carries on. Nothing has it open by the time the new
+    copy starts, but it is 8MB and it used to sit there until the next install,
+    which might be never.
+    """
+    stale = installed_exe() + ".old"
+    try:
+        if os.path.isfile(stale):
+            os.remove(stale)
+            return stale
+    except OSError:
+        pass          # still locked; the next start will get it
+    return None
+
+
+def running_from_install():
+    return (getattr(sys, "frozen", False)
+            and os.path.abspath(sys.executable) == installed_exe())
+
 
 def _launch_argv():
-    """How to relaunch *this* companion at login. For a PyInstaller-frozen app
-    that's just the executable itself (its __file__ lives in a temp dir that is
-    gone after exit); from source it's `python thisfile.py`."""
+    """How to relaunch the companion at login.
+
+    Prefers the installed copy over whichever file is running right now. That
+    distinction is the whole point of installing: autostart used to record
+    sys.executable, so a binary run straight out of the Downloads folder
+    registered *that* path, and emptying Downloads silently broke start-up
+    with nothing to see and nothing to fix.
+    """
+    if is_installed():
+        return [installed_exe()]
     if getattr(sys, "frozen", False):
         return [os.path.abspath(sys.executable)]
     return [sys.executable or "python3", os.path.abspath(__file__)]
+
+
+def _win_shortcut(link_path, target):
+    """A real .lnk, via the shell's own COM object.
+
+    A .cmd shim in the Start Menu would work and need no dependencies, but it
+    flashes a console window on every launch and shows up with the wrong icon.
+    Falls back to the shim if PowerShell is unavailable or refuses.
+    """
+    ps = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut(%r); "
+          "$s.TargetPath = %r; $s.WorkingDirectory = %r; $s.Save()"
+          % (link_path, target, os.path.dirname(target)))
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive",
+                            "-Command", ps], capture_output=True, timeout=30)
+        if r.returncode == 0 and os.path.exists(link_path):
+            return link_path
+    except (OSError, subprocess.SubprocessError):
+        pass
+    shim = os.path.splitext(link_path)[0] + ".cmd"
+    with open(shim, "w", encoding="utf-8") as fh:
+        fh.write('@echo off\r\nstart "" "%s"\r\n' % target)
+    return shim
+
+
+def install_app(startup=True):
+    """Copy the app somewhere stable and give it a launcher entry.
+
+    Returns a list of human-readable lines describing what was done, so the
+    caller can print it or show it. Raises on anything that actually failed.
+    """
+    if not getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "Running from source, so there is no single file to install. "
+            "Use --startup on its own to add the login item, pointing at this "
+            "checkout.")
+    done = []
+    src = os.path.abspath(sys.executable)
+    dst = installed_exe()
+    os.makedirs(install_dir(), exist_ok=True)
+    if os.path.abspath(src) != dst:
+        # Windows will not let a running .exe be overwritten, and an upgrade in
+        # place is exactly when that happens. Move the old one aside first; it
+        # can be deleted on the next run, once nothing has it open.
+        if os.path.exists(dst):
+            stale = dst + ".old"
+            try:
+                if os.path.exists(stale):
+                    os.remove(stale)
+                os.replace(dst, stale)
+            except OSError:
+                pass
+        shutil.copy2(src, dst)
+        try:
+            os.chmod(dst, 0o755)
+        except OSError:
+            pass
+        done.append("Installed to %s" % dst)
+    else:
+        done.append("Already installed at %s" % dst)
+
+    # A launcher entry, so it can be started like any other app rather than by
+    # finding the file again.
+    if sys.platform == "win32":
+        menu = os.path.join(os.environ.get("APPDATA", ""), "Microsoft",
+                            "Windows", "Start Menu", "Programs")
+        os.makedirs(menu, exist_ok=True)
+        done.append("Start Menu: %s"
+                    % _win_shortcut(os.path.join(menu, APP_NAME + ".lnk"), dst))
+    elif sys.platform != "darwin":
+        apps = os.path.expanduser("~/.local/share/applications")
+        os.makedirs(apps, exist_ok=True)
+        desktop = os.path.join(apps, "yoyu-companion.desktop")
+        with open(desktop, "w", encoding="utf-8") as fh:
+            fh.write("[Desktop Entry]\n"
+                     "Type=Application\n"
+                     "Name=%s\n"
+                     "Comment=Feed your Claude usage to a Yoyu board\n"
+                     "Exec=%s\n"
+                     "Terminal=false\n"
+                     "Categories=Utility;\n" % (APP_NAME, dst))
+        done.append("Menu entry: %s" % desktop)
+        # A path entry too, so `yoyu-companion` works in a shell.
+        bindir = os.path.expanduser("~/.local/bin")
+        os.makedirs(bindir, exist_ok=True)
+        link = os.path.join(bindir, "yoyu-companion")
+        try:
+            if os.path.islink(link) or os.path.exists(link):
+                os.remove(link)
+            os.symlink(dst, link)
+            done.append("Command: %s" % link)
+        except OSError:
+            pass
+
+    if startup:
+        done.append("Starts at login: %s" % install_autostart())
+    else:
+        done.append("Not starting at login (add it later with --startup)")
+    return done
+
+
+def uninstall_app():
+    """Undo install_app. Leaves the config and the paired keys alone."""
+    removed = uninstall_autostart()
+    targets = [installed_exe(), installed_exe() + ".old"]
+    if sys.platform == "win32":
+        menu = os.path.join(os.environ.get("APPDATA", ""), "Microsoft",
+                            "Windows", "Start Menu", "Programs")
+        targets += [os.path.join(menu, APP_NAME + ".lnk"),
+                    os.path.join(menu, APP_NAME + ".cmd")]
+    elif sys.platform != "darwin":
+        targets += [os.path.expanduser("~/.local/share/applications/"
+                                       "yoyu-companion.desktop"),
+                    os.path.expanduser("~/.local/bin/yoyu-companion")]
+    for t in targets:
+        try:
+            if os.path.islink(t) or os.path.isfile(t):
+                # Do not delete the file we are currently running from; on
+                # Windows that fails outright, and elsewhere it would leave the
+                # user with no app and no warning.
+                if getattr(sys, "frozen", False) and \
+                        os.path.abspath(t) == os.path.abspath(sys.executable):
+                    continue
+                os.remove(t)
+                removed.append(t)
+        except OSError:
+            pass
+    try:
+        if os.path.isdir(install_dir()) and not os.listdir(install_dir()):
+            os.rmdir(install_dir())
+    except OSError:
+        pass
+    return removed
 
 
 def install_autostart():
@@ -1673,6 +1863,13 @@ def _single_instance():
 def main():
     cfg = load_config()
     ap = argparse.ArgumentParser(description="Yoyu companion")
+    ap.add_argument("--install", action="store_true",
+                    help="copy the app somewhere permanent, add a launcher "
+                         "entry, and start it at login")
+    ap.add_argument("--no-startup", action="store_true",
+                    help="with --install: set it up but do not start at login")
+    ap.add_argument("--startup", action="store_true",
+                    help="add the login item on its own, without installing")
     ap.add_argument("--disconnect", nargs="?", const=True, metavar="URL",
                     help="clear a board's Claude login and forget its top-up "
                          "key (the reverse of --pair)")
@@ -1744,8 +1941,28 @@ def main():
                      "--disconnect http://<its-address>:8080")
         sys.exit(0 if disconnect_board(url, args.token or cfg.get("token", "")) else 1)
 
+    if args.install:
+        try:
+            for line in install_app(startup=not args.no_startup):
+                print(line)
+        except Exception as exc:  # noqa: BLE001 - report, do not traceback
+            print("Install failed: %s" % exc, file=sys.stderr)
+            sys.exit(1)
+        if not is_installed():
+            return
+        print("")
+        print("Run it from your applications menu, or just leave it; it will "
+              "start on its own next time you log in.")
+        return
+
+    if args.startup:
+        print("Starts at login: %s" % install_autostart())
+        with open(INSTALLED_MARKER, "w", encoding="utf-8") as fh:
+            fh.write(str(cfg.get("pi") or ""))
+        return
+
     if args.uninstall:
-        removed = uninstall_autostart()
+        removed = uninstall_app()
         print("Removed:\n  " + "\n  ".join(removed) if removed
               else "Nothing to remove.")
         return
@@ -1761,6 +1978,10 @@ def main():
                  "powered on and on the same Wi-Fi, or pass "
                  "--pi http://<its-address>:8080")
     migrate_topup_keys()
+    # Before any early return below. Sitting further down meant --once never
+    # reached it, so the 8MB copy an upgrade leaves behind survived every run
+    # of the one mode a scheduled task is most likely to use.
+    sweep_stale_install()
 
     if args.once:
         print(f"Yoyu companion -> {cfg['pi']} (single push)")
@@ -1792,15 +2013,19 @@ def main():
         print("Removed a leftover auto-start entry from an older version:\n"
               f"  {stale}")
     first_ok, _, _ = run_once(cfg)
-    if first_ok and not args.no_install and not os.path.isfile(INSTALLED_MARKER):
-        try:
-            where = install_autostart()
-            with open(INSTALLED_MARKER, "w", encoding="utf-8") as fh:
-                fh.write(cfg["pi"])
-            print(f"Set to run automatically at login.\n  {where}\n"
-                  "  (run with --uninstall to stop)")
-        except Exception as exc:  # noqa: BLE001
-            print(f"(couldn't set auto-start: {exc})", file=sys.stderr)
+    # Deliberately does NOT install itself any more. It used to add a login
+    # item after the first good push without asking, pointing at whatever path
+    # the binary was run from -- usually the Downloads folder, so emptying
+    # Downloads broke start-up silently. Say it once instead, and let the
+    # person decide.
+    if first_ok and not args.no_install and not os.path.isfile(INSTALLED_MARKER) \
+            and not running_from_install():
+        print("")
+        print("Tip: run this once with --install to keep a permanent copy and "
+              "start it at login.")
+        if getattr(sys, "frozen", False) and not is_installed():
+            print("     Right now it will only run from %s"
+                  % os.path.abspath(sys.executable))
     # When Anthropic rate-limits the usage endpoint (HTTP 429), stop hammering
     # it: back off exponentially (2x per consecutive 429, capped at 30 min) and
     # honour any Retry-After the server sends as a floor. A single good read

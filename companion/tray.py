@@ -459,16 +459,51 @@ def is_autostarted():
 
 
 def ensure_autostart():
-    """Install the login item once, quietly. Called after the first good feed
-    so we only persist a setup that actually works."""
-    if is_autostarted():
-        return
-    try:
-        companion.install_autostart()
+    """Deliberately does nothing now, and is kept as the place that explains why.
+
+    This used to add a login item after the first good feed, quietly. Two
+    things were wrong with that. Deciding that a program should start with
+    somebody's computer is theirs to decide, and the path it recorded was
+    wherever the binary happened to be running from, which for a file
+    downloaded and double-clicked is the Downloads folder. Emptying Downloads
+    then broke start-up with nothing on screen to say so.
+
+    Installing is now something you ask for: the menu offers it, and the CLI
+    has --install.
+    """
+    return
+
+
+def do_install(icon, item):
+    """Copy the app somewhere permanent and offer to start it at login."""
+    def run():
+        if not getattr(sys, "frozen", False):
+            state["status"] = "Running from source: use --install on the binary"
+            icon.update_menu()
+            return
+        startup = _confirm(
+            "Install %s and start it when you log in?" % companion.APP_NAME
+            + chr(10) +
+            "Choosing No still installs it, just without starting at login.")
+        try:
+            lines = companion.install_app(startup=startup)
+        except Exception as exc:  # noqa: BLE001
+            state["status"] = "Install failed: %s" % exc
+            icon.update_menu()
+            return
         with open(companion.INSTALLED_MARKER, "w", encoding="utf-8") as fh:
             fh.write(state.get("url") or "")
-    except Exception:  # noqa: BLE001 - autostart is a nicety, never fatal
-        pass
+        state["status"] = ("Installed" + (" - starts at login" if startup else ""))
+        try:
+            icon.menu = build_menu()
+        except Exception:  # noqa: BLE001
+            pass
+        icon.update_menu()
+        try:
+            icon.notify(chr(10).join(lines[:3]), companion.APP_NAME)
+        except Exception:  # noqa: BLE001 - not every backend has notify()
+            pass
+    threading.Thread(target=run, daemon=True).start()
 
 
 def toggle_autostart(icon, item):
@@ -507,6 +542,11 @@ def build_menu():
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Feeding", toggle_feeding,
                          checked=lambda item: state["feeding"]),
+        # Only worth offering while it is not yet installed. Once it is, the
+        # login item is part of the install and "Start at login" below covers
+        # turning it on and off.
+        pystray.MenuItem("Install on this computer…", do_install,
+                         visible=lambda item: not companion.is_installed()),
         pystray.MenuItem("Start at login", toggle_autostart,
                          checked=lambda item: is_autostarted()),
         *_board_items(),
@@ -547,6 +587,7 @@ def main():
     # There is no console here to print to, so anything removed has to be said
     # in the UI. It goes in the menu's status line, and is offered as a desktop
     # notification too where the backend supports one.
+    companion.sweep_stale_install()
     swept = companion.sweep_stale_autostart()
     if swept:
         state["status"] = ("Removed %d leftover auto-start %s from an older "

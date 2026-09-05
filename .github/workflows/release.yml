@@ -214,6 +214,18 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Hash everything that gets published
+        run: |
+          # Nothing here is code-signed, so Windows Defender and macOS
+          # Gatekeeper both treat the downloads as unknown. Anyone who wants to
+          # add an antivirus exclusion needs a way to tell the real file from a
+          # substituted one first, and this is it. Names only, no paths, so
+          # `sha256sum -c` works from wherever the files were downloaded to.
+          cd dist
+          find . -maxdepth 1 -type f -printf '%P\n' | sort \
+            | xargs sha256sum > ../SHA256SUMS.txt
+          mv ../SHA256SUMS.txt .
+          cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
@@ -236,7 +248,7 @@ jobs:
                       yoyu-amoled-bootloader.bin yoyu-amoled-partitions.bin \
                       yoyu-amoled-boot_app0.bin yoyu-amoled-merged.bin \
                       YoyuCompanion-windows.exe YoyuCompanion-macos \
-                      YoyuCompanion-linux; do
+                      YoyuCompanion-linux SHA256SUMS.txt; do
             if ! echo "$ASSETS" | grep -qx "$want"; then
               echo "::error::Release $TAG is missing asset: $want"
               MISSING=1
