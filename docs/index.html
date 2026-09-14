@@ -99,11 +99,11 @@
     transform:scale(1.25);box-shadow:inset 0 0 0 3px var(--acc-deep)}
   .rail .now{color:var(--ink);font-weight:600}
   .rail .done{color:var(--acc-text)}
-  /* Inset to 10% each side, which is exactly the first and last pip centre
-     for five equal columns, so the line starts and stops on the pips instead
-     of running off the ends. It sits before the pips in the DOM, so they paint
+  /* Inset half a column each side, 1/12 with six equal columns, which is
+     exactly the first and last pip centre, so the line starts and stops on the
+     pips instead of running off the ends. It sits before the pips in the DOM, so they paint
      over it and no negative z-index is needed. */
-  .rail .track{position:absolute;top:10.5px;left:10%;right:10%;height:2px;
+  .rail .track{position:absolute;top:10.5px;left:8.333%;right:8.333%;height:2px;
     background:var(--line);border-radius:2px}
   /* scaleX rather than an animated width: the fill redraws on every frame of
      every step change, and scaling a fixed-size box keeps that off the layout
@@ -168,6 +168,55 @@
   .warn svg{width:15px;height:15px;flex:0 0 auto;margin-top:1px}
   .warn.ok{color:var(--muted)}
   .warn.ok strong{color:var(--ink)}
+
+  /* ---- Screen picker ----------------------------------------------------
+     Each screen shown as itself, small, next to what it is for. A list of
+     names made this a guess for anyone who had not tapped through all nine,
+     which is everyone at setup. */
+  .scr{list-style:none;margin:14px 0 4px;padding:0;display:grid;
+    grid-template-columns:1fr;gap:8px}
+  @media (min-width:560px){.scr{grid-template-columns:1fr 1fr}}
+  .scrcard label{display:flex;gap:12px;align-items:center;height:100%;
+    background:var(--raised);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;cursor:pointer;
+    transition:border-color .2s var(--out),box-shadow .2s var(--out)}
+  .scrcard label:hover{border-color:var(--acc)}
+  .scrcard .thumb{flex:0 0 auto;width:42px;height:56px;border-radius:5px;
+    transition:opacity .2s var(--out),filter .2s var(--out)}
+  .scrtext{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .scrtext strong{font-size:.95rem;transition:color .2s var(--out)}
+  .scrtext span{font-size:.82rem;color:var(--muted);line-height:1.35}
+  .scrtext em{font-style:normal;font-size:.72rem;font-weight:600;
+    color:var(--acc-text);margin-top:2px}
+  /* A real checkbox, drawn as a switch. appearance:none keeps its semantics,
+     label and keyboard handling, which a styled div would have to rebuild. */
+  .scrcard input{appearance:none;-webkit-appearance:none;order:3;flex:0 0 auto;
+    width:38px;height:22px;border-radius:99px;background:rgba(61,57,41,.22);
+    position:relative;margin:0;cursor:pointer;transition:background .2s var(--out)}
+  .scrcard input::after{content:"";position:absolute;top:3px;left:3px;
+    width:16px;height:16px;border-radius:50%;background:#fff;
+    box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .2s var(--out)}
+  .scrcard input:checked{background:var(--acc-deep)}
+  .scrcard input:checked::after{transform:translateX(16px)}
+  .scrcard input:focus-visible{outline:2px solid var(--acc-deep);outline-offset:2px}
+  .scrcard label:has(input:not(:checked)) .thumb{opacity:.4;filter:grayscale(.7)}
+  .scrcard label:has(input:not(:checked)) strong{color:var(--muted)}
+  .scrcount{font-size:.82rem;color:var(--muted);margin:6px 0 0}
+  .scropts{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+  .scropts label{flex:1 1 180px;font-size:.85rem;color:var(--muted);
+    display:flex;flex-direction:column;gap:4px}
+  .scropts select,.sendrow input{font:inherit;font-size:.95rem;color:var(--ink);
+    background:var(--raised);border:1px solid var(--line);border-radius:10px;
+    padding:9px 10px}
+  .send{background:var(--tint);border-radius:12px;padding:12px 14px;margin:14px 0 4px}
+  .send>label{font-size:.9rem;font-weight:600;display:block;margin-bottom:6px}
+  .sendrow{display:flex;gap:8px;flex-wrap:wrap}
+  .sendrow input{flex:1 1 160px;min-width:0}
+  .sendrow input[aria-invalid="true"]{border-color:var(--err)}
+  #scrsend{text-decoration:none}
+  #scrsend[aria-disabled="true"]{opacity:.5;pointer-events:none}
+  @media (prefers-reduced-motion:reduce){
+    .scrcard input,.scrcard input::after,.scrcard .thumb{transition:none}}
   .links{font-size:.85rem;color:var(--muted);margin:8px 2px 0;text-align:center}
   .disclose{color:var(--muted);font-size:.76rem;text-align:center;margin:10px 0 0}
   /* Once chosen, the choice stays legible at the top of every later step —
@@ -320,8 +369,9 @@
       <li><button type="button" data-to="1"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Board</button></li>
       <li><button type="button" data-to="2"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Flash</button></li>
       <li><button type="button" data-to="3"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Wi-Fi</button></li>
-      <li><button type="button" data-to="4"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Usage</button></li>
-      <li><button type="button" data-to="5"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Done</button></li>
+      <li><button type="button" data-to="4"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Screens</button></li>
+      <li><button type="button" data-to="5"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Usage</button></li>
+      <li><button type="button" data-to="6"><span class="pip"><svg viewBox="0 0 12 12" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 6.4 4.7 9 10 3.2"/></svg></span>Done</button></li>
     </ol>
   </nav>
   <p class="sr" aria-live="polite" id="say"></p>
@@ -457,7 +507,8 @@
       network, type the password once. It's sent to the board over the USB
       cable you already have plugged in. <strong>No hotspot, no app.</strong></p>
     <p class="muted">The board reboots and shows its address on screen. Write
-      that address down; it's how you'll change settings later.</p>
+      that address down. The next step uses it, and it's how you'll change
+      settings later.</p>
     <details>
       <summary>Closed that window, or it never offered Wi-Fi?</summary>
       <p>A flashed board with no network to join puts up its own Wi-Fi instead.
@@ -475,7 +526,97 @@
   </section>
 
   <section class="card stepcard" data-step="4">
-    <div class="step"><span class="num">4</span><h2 tabindex="-1">Feed it your usage</h2></div>
+    <div class="step"><span class="num">4</span><h2 tabindex="-1">Choose your screens</h2></div>
+    <p>The board has nine screens. Keep the ones you will use and the rest stay
+      out of the rotation.<span class="lcd-only"> Tap the board to go from one
+      to the next.</span><span class="amoled-only"> This board has no working
+      touch, so they change on their own.</span> Skip this and a new board
+      shows all nine.</p>
+    <ul class="scr" id="scrlist">
+      <li class="scrcard"><label>
+        <input type="checkbox" value="meters" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="7" y="9" width="16" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="15" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="15" width="32" height="6" rx="3" fill="#d97757"/><rect x="7" y="31" width="12" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="37" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="37" width="20" height="6" rx="3" fill="#d97757"/><rect x="7" y="53" width="19" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="59" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="59" width="40" height="6" rx="3" fill="#d97757"/></svg>
+        <span class="scrtext"><strong>Meters</strong><span>Every usage window as a bar, with its reset countdown.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="focus" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="20" y="10" width="20" height="3" rx="1.5" fill="#6b6759"/><text x="30" y="42" text-anchor="middle" font-family="system-ui,sans-serif" font-weight="700" font-size="19" fill="#d97757">62%</text><rect x="8" y="52" width="44" height="6" rx="3" fill="#2c2721"/><rect x="8" y="52" width="27" height="6" rx="3" fill="#d97757"/><rect x="14" y="64" width="32" height="2.5" rx="1.25" fill="#6b6759"/></svg>
+        <span class="scrtext"><strong>Focus</strong><span>One big number for the window you are closest to running out of.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="pace" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="12" y="9" width="36" height="3.5" rx="1.75" fill="#faf7ef" opacity=".85"/><rect x="18" y="15" width="24" height="3.5" rx="1.75" fill="#e3a23b"/><rect x="7" y="29" width="14" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="35" width="46" height="5" rx="2.5" fill="#2c2721"/><rect x="7" y="35" width="21" height="5" rx="2.5" fill="#d97757"/><rect x="31" y="32.5" width="1.6" height="10" fill="#faf7ef"/><rect x="7" y="51" width="12" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="57" width="46" height="5" rx="2.5" fill="#2c2721"/><rect x="7" y="57" width="36" height="5" rx="2.5" fill="#e3a23b"/><rect x="27" y="54.5" width="1.6" height="10" fill="#faf7ef"/><rect x="7" y="67" width="30" height="2.5" rx="1.25" fill="#e3a23b" opacity=".8"/></svg>
+        <span class="scrtext"><strong>Pace</strong><span>Whether you will run out before each window resets, at your current pace.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="history" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="7" y="10" width="18" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="60" width="3" height="6" rx="1" fill="#d97757"/><rect x="11.3" y="57" width="3" height="9" rx="1" fill="#d97757"/><rect x="15.6" y="58" width="3" height="8" rx="1" fill="#d97757"/><rect x="19.9" y="52" width="3" height="14" rx="1" fill="#d97757"/><rect x="24.2" y="48" width="3" height="18" rx="1" fill="#d97757"/><rect x="28.5" y="51" width="3" height="15" rx="1" fill="#d97757"/><rect x="32.8" y="44" width="3" height="22" rx="1" fill="#d97757"/><rect x="37.1" y="40" width="3" height="26" rx="1" fill="#d97757"/><rect x="41.4" y="42" width="3" height="24" rx="1" fill="#d97757"/><rect x="45.7" y="36" width="3" height="30" rx="1" fill="#d97757"/><rect x="50" y="32" width="3" height="34" rx="1" fill="#d97757"/><rect x="7" y="67" width="46" height="1" rx="0" fill="#2c2721"/></svg>
+        <span class="scrtext"><strong>History</strong><span>The last ten hours of usage as a graph.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="yoyu" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="16" y="18" width="4" height="4" fill="#9e4429"/><rect x="40" y="18" width="4" height="4" fill="#9e4429"/><rect x="12" y="22" width="4" height="4" fill="#c9603f"/><rect x="16" y="22" width="4" height="4" fill="#9e4429"/><rect x="20" y="22" width="4" height="4" fill="#9e4429"/><rect x="36" y="22" width="4" height="4" fill="#9e4429"/><rect x="40" y="22" width="4" height="4" fill="#9e4429"/><rect x="44" y="22" width="4" height="4" fill="#c9603f"/><rect x="12" y="26" width="4" height="4" fill="#c9603f"/><rect x="16" y="26" width="4" height="4" fill="#c9603f"/><rect x="20" y="26" width="4" height="4" fill="#c9603f"/><rect x="36" y="26" width="4" height="4" fill="#c9603f"/><rect x="40" y="26" width="4" height="4" fill="#c9603f"/><rect x="44" y="26" width="4" height="4" fill="#c9603f"/><rect x="12" y="30" width="4" height="4" fill="#c9603f"/><rect x="16" y="30" width="4" height="4" fill="#17150f"/><rect x="20" y="30" width="4" height="4" fill="#c9603f"/><rect x="24" y="30" width="4" height="4" fill="#c9603f"/><rect x="28" y="30" width="4" height="4" fill="#c9603f"/><rect x="32" y="30" width="4" height="4" fill="#c9603f"/><rect x="36" y="30" width="4" height="4" fill="#17150f"/><rect x="40" y="30" width="4" height="4" fill="#c9603f"/><rect x="44" y="30" width="4" height="4" fill="#c9603f"/><rect x="12" y="34" width="4" height="4" fill="#c9603f"/><rect x="16" y="34" width="4" height="4" fill="#c9603f"/><rect x="20" y="34" width="4" height="4" fill="#c9603f"/><rect x="24" y="34" width="4" height="4" fill="#c9603f"/><rect x="28" y="34" width="4" height="4" fill="#c9603f"/><rect x="32" y="34" width="4" height="4" fill="#c9603f"/><rect x="36" y="34" width="4" height="4" fill="#c9603f"/><rect x="40" y="34" width="4" height="4" fill="#c9603f"/><rect x="44" y="34" width="4" height="4" fill="#c9603f"/><rect x="16" y="38" width="4" height="4" fill="#c9603f"/><rect x="20" y="38" width="4" height="4" fill="#c9603f"/><rect x="24" y="38" width="4" height="4" fill="#c9603f"/><rect x="28" y="38" width="4" height="4" fill="#c9603f"/><rect x="32" y="38" width="4" height="4" fill="#c9603f"/><rect x="36" y="38" width="4" height="4" fill="#c9603f"/><rect x="40" y="38" width="4" height="4" fill="#c9603f"/><rect x="20" y="42" width="4" height="4" fill="#c9603f"/><rect x="24" y="42" width="4" height="4" fill="#faf7ef"/><rect x="28" y="42" width="4" height="4" fill="#17150f"/><rect x="32" y="42" width="4" height="4" fill="#faf7ef"/><rect x="36" y="42" width="4" height="4" fill="#c9603f"/><rect x="24" y="46" width="4" height="4" fill="#17150f"/><rect x="28" y="46" width="4" height="4" fill="#faf7ef"/><rect x="32" y="46" width="4" height="4" fill="#17150f"/><rect x="16" y="50" width="4" height="4" fill="#c9603f"/><rect x="20" y="50" width="4" height="4" fill="#c9603f"/><rect x="24" y="50" width="4" height="4" fill="#c9603f"/><rect x="28" y="50" width="4" height="4" fill="#c9603f"/><rect x="32" y="50" width="4" height="4" fill="#c9603f"/><rect x="36" y="50" width="4" height="4" fill="#c9603f"/><rect x="40" y="50" width="4" height="4" fill="#c9603f"/><rect x="16" y="54" width="4" height="4" fill="#c9603f"/><rect x="20" y="54" width="4" height="4" fill="#c9603f"/><rect x="24" y="54" width="4" height="4" fill="#faf7ef"/><rect x="28" y="54" width="4" height="4" fill="#faf7ef"/><rect x="32" y="54" width="4" height="4" fill="#faf7ef"/><rect x="36" y="54" width="4" height="4" fill="#c9603f"/><rect x="40" y="54" width="4" height="4" fill="#c9603f"/><rect x="16" y="58" width="4" height="4" fill="#c9603f"/><rect x="20" y="58" width="4" height="4" fill="#c9603f"/><rect x="24" y="58" width="4" height="4" fill="#faf7ef"/><rect x="28" y="58" width="4" height="4" fill="#faf7ef"/><rect x="32" y="58" width="4" height="4" fill="#faf7ef"/><rect x="36" y="58" width="4" height="4" fill="#c9603f"/><rect x="40" y="58" width="4" height="4" fill="#c9603f"/></svg>
+        <span class="scrtext"><strong>Yoyu</strong><span>Your character. How it looks tracks how much is left.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="timer" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="18" y="12" width="24" height="3" rx="1.5" fill="#6b6759"/><text x="30" y="46" text-anchor="middle" font-family="ui-monospace,Menlo,Consolas,monospace" font-weight="700" font-size="15" fill="#faf7ef">1:23</text><rect x="14" y="56" width="32" height="3" rx="1.5" fill="#d97757"/></svg>
+        <span class="scrtext"><strong>Timer</strong><span>A countdown to the next reset, big enough to read across a room.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="actions">
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="9" y="12" width="42" height="15" rx="4" fill="#2c2721"/><rect x="14" y="18" width="18" height="3" rx="1.5" fill="#d97757"/><rect x="9" y="32" width="42" height="15" rx="4" fill="#3a2c24" stroke="#d97757" stroke-width="1"/><rect x="14" y="38" width="22" height="3" rx="1.5" fill="#faf7ef"/><rect x="9" y="52" width="42" height="15" rx="4" fill="#2c2721"/><rect x="14" y="58" width="14" height="3" rx="1.5" fill="#d97757"/></svg>
+        <span class="scrtext"><strong>Actions</strong><span>Shortcut buttons for Claude Code. Needs the companion with --actions.</span><em class="amoled-only">Needs touch, which this board lacks</em></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="projects" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="7" y="10" width="20" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="20" width="14" height="2.5" rx="1.25" fill="#6b6759"/><rect x="7" y="24" width="42" height="4" rx="2" fill="#d97757"/><rect x="7" y="32" width="12" height="2.5" rx="1.25" fill="#6b6759"/><rect x="7" y="36" width="30" height="4" rx="2" fill="#b8674b"/><rect x="7" y="44" width="10" height="2.5" rx="1.25" fill="#6b6759"/><rect x="7" y="48" width="19" height="4" rx="2" fill="#b8674b"/><rect x="7" y="56" width="8" height="2.5" rx="1.25" fill="#6b6759"/><rect x="7" y="60" width="10" height="4" rx="2" fill="#b8674b"/></svg>
+        <span class="scrtext"><strong>Projects</strong><span>Which projects used the most of your session. Needs the companion.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="settings" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="10" y="10" width="40" height="5" rx="2" fill="#d97757"/><rect x="17" y="18" width="26" height="2.5" rx="1.25" fill="#6b6759"/><rect x="7" y="25" width="46" height="0.8" rx="0" fill="#2c2721"/><rect x="8" y="30" width="4" height="4" rx="1" fill="#d97757"/><rect x="15" y="31" width="22" height="2.2" rx="1.1" fill="#8a8577"/><rect x="8" y="37" width="4" height="4" rx="1" fill="#d97757"/><rect x="15" y="38" width="16" height="2.2" rx="1.1" fill="#8a8577"/><rect x="8" y="44" width="4" height="4" rx="1" fill="#d97757"/><rect x="15" y="45" width="20" height="2.2" rx="1.1" fill="#8a8577"/><rect x="8.4" y="51.4" width="3.2" height="3.2" rx="1" fill="none" stroke="#6b6759" stroke-width=".8"/><rect x="15" y="52" width="14" height="2.2" rx="1.1" fill="#6b6759"/><rect x="8" y="58" width="4" height="4" rx="1" fill="#d97757"/><rect x="15" y="59" width="18" height="2.2" rx="1.1" fill="#8a8577"/><rect x="8" y="65" width="4" height="4" rx="1" fill="#d97757"/><rect x="15" y="66" width="24" height="2.2" rx="1.1" fill="#8a8577"/></svg>
+        <span class="scrtext"><strong>Settings</strong><span>The board's own address, and which screens are in the rotation.</span></span>
+      </label></li>
+    </ul>
+    <p class="scrcount" id="scrcount" aria-live="polite"></p>
+    <div class="scropts">
+      <label>Show first
+        <select id="scrdefault"><option value="meters" selected>Meters</option><option value="focus">Focus</option><option value="pace">Pace</option><option value="history">History</option><option value="yoyu">Yoyu</option><option value="timer">Timer</option><option value="actions">Actions</option><option value="projects">Projects</option><option value="settings">Settings</option></select></label>
+      <label>Change screens
+        <select id="scrrotate">
+          <option value="0">When I tap it</option>
+          <option value="10">Every 10 seconds</option>
+          <option value="20">Every 20 seconds</option>
+          <option value="30">Every 30 seconds</option>
+          <option value="60">Every minute</option>
+        </select></label>
+    </div>
+    <div class="send">
+      <label for="boardaddr">Your board's address</label>
+      <div class="sendrow">
+        <input id="boardaddr" type="text" inputmode="url" autocomplete="off"
+          autocapitalize="off" spellcheck="false" value="yoyu.local"
+          aria-describedby="addrhint">
+        <a class="btn btn-go" id="scrsend" target="_blank" rel="noopener"
+          href="http://yoyu.local:8080/settings#screens">Open it with these ticked</a>
+      </div>
+      <p class="muted" id="addrhint">The one on its screen from step 3.
+        <code>yoyu.local</code> works too if you only have one board. That opens
+        the board's own settings page with your choices filled in; press
+        <strong>Save</strong> there to keep them. This page can't change the
+        board itself, because browsers keep websites away from devices on your
+        home network.</p>
+    </div>
+    <div class="go">
+      <button type="button" class="btn" data-back><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8H3M7 4 3 8l4 4"/></svg>Back</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn btn-go" data-next>Done choosing<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
+    </div>
+  </section>
+
+  <section class="card stepcard" data-step="5">
+    <div class="step"><span class="num">5</span><h2 tabindex="-1">Feed it your usage</h2></div>
     <p>Run the little companion on the computer where you use Claude Code. It
       reads your existing login and sends usage to the board. No extra sign-in.
       Download it and open it; it runs straight away, and can install itself
@@ -546,12 +687,12 @@
     </div>
   </section>
 
-  <!-- Step 5 exists because the metric is a board left powered on a desk, not a
+  <!-- The last step exists because the metric is a board left powered on a desk, not a
        board that flashed. This is where the photo finally means something, and
        where the two things people ask next — how do I change it, how do I stop
        leaving the companion running — get answered instead of discovered. -->
-  <section class="card stepcard" data-step="5">
-    <div class="step"><span class="num">5</span><h2 tabindex="-1">That's it</h2></div>
+  <section class="card stepcard" data-step="6">
+    <div class="step"><span class="num">6</span><h2 tabindex="-1">That's it</h2></div>
     <img class="shot" src="img/meters.jpg" width="1054" height="1400"
       loading="lazy" decoding="async"
       alt="Yoyu on a desk, showing labelled session and weekly usage
@@ -630,7 +771,7 @@
       lcd:    { name: '2″ LCD',    manifest: './firmware/manifest.json' },
       amoled: { name: '2.16″ AMOLED', manifest: './firmware/manifest-amoled216.json' }
     };
-    var LAST = 5;
+    var LAST = 6;
     var body = document.body;
     var steps = [].slice.call(document.querySelectorAll('.stepcard'));
     var rail = document.getElementById('rail');
@@ -745,6 +886,96 @@
     reached = board && at >= 1 && at <= LAST ? at : 1;
     body.classList.add('wiz');
     show(board ? reached : 1, false);
+  })();
+
+  // ---- Screen picker ------------------------------------------------------
+  // The choices have to reach the board, and this page cannot send them: an
+  // HTTPS site is not allowed to make requests to a device on the LAN. It can
+  // open one, though, the same way the flasher's "Visit Device" button does.
+  // So the link carries the picks to the board's own settings page, which
+  // fills them in and leaves saving to a click there.
+  (function () {
+    var list = document.getElementById('scrlist');
+    if (!list) return;
+    var boxes = [].slice.call(list.querySelectorAll('input[type=checkbox]'));
+    var def = document.getElementById('scrdefault');
+    var rot = document.getElementById('scrrotate');
+    var addr = document.getElementById('boardaddr');
+    var send = document.getElementById('scrsend');
+    var count = document.getElementById('scrcount');
+    function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+    function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+    var saved = get('yoyu-screens');
+    if (saved) {
+      var on = saved.split(',');
+      boxes.forEach(function (b) { b.checked = on.indexOf(b.value) >= 0; });
+    }
+    if (get('yoyu-default')) def.value = get('yoyu-default');
+    if (get('yoyu-addr')) addr.value = get('yoyu-addr');
+
+    // Without touch the board cannot be tapped along, so the AMOLED wants the
+    // screens to change on their own. Only until someone picks for themselves.
+    function boardDefaults() {
+      if (get('yoyu-rotate')) { rot.value = get('yoyu-rotate'); return; }
+      rot.value = document.body.getAttribute('data-board') === 'amoled' ? '20' : '0';
+    }
+
+    function chosen() {
+      return boxes.filter(function (b) { return b.checked; })
+                  .map(function (b) { return b.value; });
+    }
+    // Host names and addresses only, with an optional port. Anything else
+    // would be pasted into a URL, and a javascript: one would be worse.
+    function host() {
+      var v = (addr.value || '').trim()
+        .replace(/^[a-z]+:\/\//i, '').replace(/[\/?#].*$/, '');
+      if (!/^[a-z0-9.\-]+(:\d{1,5})?$/i.test(v)) return null;
+      return /:\d+$/.test(v) ? v : v + ':8080';
+    }
+
+    function refresh(store) {
+      var on = chosen();
+      [].forEach.call(def.options, function (o) {
+        o.disabled = on.indexOf(o.value) < 0;
+      });
+      if (on.length && on.indexOf(def.value) < 0) def.value = on[0];
+      var h = host();
+      addr.setAttribute('aria-invalid', h ? 'false' : 'true');
+      var ready = !!(h && on.length);
+      send.setAttribute('aria-disabled', ready ? 'false' : 'true');
+      send.href = ready
+        ? 'http://' + h + '/settings?screens=' + on.join(',') +
+          '&default=' + def.value + '&rotate=' + rot.value + '#screens'
+        : '#';
+      count.textContent = on.length
+        ? on.length + ' of ' + boxes.length + ' on'
+        : 'Pick at least one.';
+      if (store) {
+        set('yoyu-screens', on.join(','));
+        set('yoyu-default', def.value);
+        set('yoyu-addr', addr.value.trim());
+      }
+    }
+
+    list.addEventListener('change', function () { refresh(true); });
+    def.addEventListener('change', function () { refresh(true); });
+    addr.addEventListener('input', function () { refresh(true); });
+    rot.addEventListener('change', function () {
+      set('yoyu-rotate', rot.value);
+      refresh(true);
+    });
+    send.addEventListener('click', function (e) {
+      if (send.getAttribute('aria-disabled') === 'true') e.preventDefault();
+    });
+    // The board can be chosen, or changed, after this has run.
+    document.body.addEventListener('click', function (e) {
+      if (e.target.closest('[data-board]')) setTimeout(function () {
+        boardDefaults(); refresh(false);
+      }, 0);
+    });
+    boardDefaults();
+    refresh(false);
   })();
 
   // Copy-link handoff for the browsers that can't flash. Inline and dependency

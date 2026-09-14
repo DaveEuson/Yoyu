@@ -380,7 +380,7 @@ static_assert(sizeof(AP_PSK) - 1 >= 8,
               "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
               "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
-static const char *FW_VERSION = "1.13.0";
+static const char *FW_VERSION = "1.14.0";
 
 // Phase 2 — self-contained: poll Anthropic's usage endpoint directly, using an
 // OAuth login pasted once via /connect. Same contract the companion uses.
@@ -388,7 +388,7 @@ static const char *CLIENT_ID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 static const char *REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 static const char *USAGE_URL   = "https://api.anthropic.com/api/oauth/usage";
 static const char *OAUTH_BETA  = "oauth-2025-04-20";
-static const char *UA          = "Yoyu/1.13.0";
+static const char *UA          = "Yoyu/1.14.0";
 // OTA self-update (over-the-air from the GitHub release)
 static const char *RELEASES_API =
     "https://api.github.com/repos/DaveEuson/Yoyu/releases/latest";
@@ -478,19 +478,39 @@ static bool      nightDim    = true;  // ease the backlight down overnight
 static const uint8_t NIGHT_LEVEL = 40;
 static int       uiScreen    = 0;     // 0 meters 1 focus 2 history 3 kitsune
                                       // 4 timer 5 actions 6 projects 7 settings
-static const int UI_SCREENS  = 8;
+                                      // 8 pace
+static const int UI_SCREENS  = 9;
+// An index is where a screen is stored, not where it sits in the rotation.
+// defaultScreen and every migration flag below were saved by index, so a new
+// screen is appended rather than inserted, and SCREEN_ORDER says where it goes.
 static const char *SCREEN_NAMES[UI_SCREENS] =
     {"Meters", "Focus", "History", "Yoyu",
-     "Timer", "Actions", "Projects", "Settings"};
-static uint8_t   screenMask  = 0xFF;  // bit i set = screen i is in the rotation
-// screenMask is one bit per screen in a uint8_t, and it is also what gets
-// persisted to NVS — a ninth screen needs a wider type *and* a migration, not
-// just a bigger UI_SCREENS.
-static_assert(UI_SCREENS <= 8, "screenMask (uint8_t) holds at most 8 screens");
+     "Timer", "Actions", "Projects", "Settings", "Pace"};
+// One line each, shown under the checkboxes on the settings page. The setup
+// wizard (docs/index.html) carries the same sentences: change one, change both.
+static const char *SCREEN_DESC[UI_SCREENS] = {
+  "Every usage window as a bar, with its reset countdown.",
+  "One big number for the window you are closest to running out of.",
+  "The last ten hours of usage as a graph.",
+  "Your character. How it looks tracks how much is left.",
+  "A countdown to the next reset, big enough to read across a room.",
+  "Shortcut buttons for Claude Code. Needs the companion with --actions.",
+  "Which projects used the most of your session. Needs the companion.",
+  "The board's own address, and which screens are in the rotation.",
+  "Whether you will run out before each window resets, at your current pace."};
+// Pace sits with the other usage screens rather than after Settings.
+static const uint8_t SCREEN_ORDER[UI_SCREENS] = {0, 1, 8, 2, 3, 4, 5, 6, 7};
+static uint16_t  screenMask  = 0x1FF; // bit i set = screen i is in the rotation
+// Persisted as "smask16". The original "smask" was one byte, which is why a
+// ninth screen needed a wider type and a migration rather than just a bigger
+// UI_SCREENS. The old key is still written, low byte only, so a board rolled
+// back to older firmware keeps its first eight choices.
+static_assert(UI_SCREENS <= 16, "screenMask (uint16_t) holds at most 16 screens");
 static const int SCREEN_TIMER    = 4;
 static const int SCREEN_ACTIONS  = 5;
 static const int SCREEN_PROJECTS = 6;
 static const int SCREEN_SETTINGS = 7;
+static const int SCREEN_PACE     = 8;
 
 // ---- Actions: the board as an input device -------------------------------
 // The Actions screen queues a shortcut; the companion polls /api/actions and
@@ -1035,6 +1055,139 @@ static void drawMeters() {
 
 // Focus screen: "will I make it to reset?" — the session window big, plus a
 // burn-rate projection from the board's own usage history.
+// ---- Pace -----------------------------------------------------------------
+//
+// "At this pace, will I run out before it resets?" Claude's own usage panel now
+// answers that, and the board had half an answer on Focus: a session-only
+// projection that took its rate from the History buffer. That buffer follows
+// whichever window is tightest, so whenever weekly was tighter than session it
+// was subtracting weekly numbers from session numbers and calling the
+// difference a burn rate.
+//
+// This is our calculation, not Anthropic's. Their usage response carries no
+// forecast, so the board works from what it does have: how much of a window is
+// used, and how far into the window we are.
+
+static const int PACE_RING = 12;
+static time_t    paceT[PACE_RING];
+static float     paceU[PACE_RING];
+static int       paceN = 0, paceHead = 0;
+static time_t    paceReset = 0;       // the session window these samples belong to
+
+static int findWindow(const char *key) {
+  for (int i = 0; i < nWindows; i++)
+    if (!strcmp(windows[i].key, key)) return i;
+  return -1;
+}
+
+// Window length by key. Anything else is not a window we know how to project.
+static long windowMinutes(const char *key) {
+  if (!strcmp(key, "five_hour")) return 5L * 60;
+  if (!strncmp(key, "seven_day", 9)) return 7L * 24 * 60;
+  return -1;
+}
+
+// Called on every fresh reading, pushed or polled. Keeps the last hour of the
+// session window so its pace reflects what you are doing now.
+static void sampleSessionPace() {
+  if (!timeSynced) return;
+  int i = findWindow("five_hour");
+  if (i < 0) return;
+  const Window &w = windows[i];
+  time_t now = time(nullptr);
+  int last = (paceHead - 1 + PACE_RING) % PACE_RING;
+  // A new window is a new series. resets_at wobbles a little between readings,
+  // so only a jump of ten minutes or more counts, and usage never falls within
+  // one window, so a fall means it reset.
+  if (paceN && (labs((long)(w.resets_at - paceReset)) > 600 ||
+                w.utilization + 0.5f < paceU[last])) {
+    paceN = 0;
+    paceHead = 0;
+  }
+  paceReset = w.resets_at;
+  // Pushes arrive every couple of minutes. One sample per five keeps twelve of
+  // them spanning the last hour.
+  if (paceN && now - paceT[(paceHead - 1 + PACE_RING) % PACE_RING] < 300) return;
+  paceT[paceHead] = now;
+  paceU[paceHead] = w.utilization;
+  paceHead = (paceHead + 1) % PACE_RING;
+  if (paceN < PACE_RING) paceN++;
+}
+
+struct PaceInfo {
+  bool  ok;           // enough to say anything at all
+  bool  out;          // already at 100%
+  bool  idle;         // this pace adds under a point before the reset
+  float ratePerMin;   // % per minute
+  long  toEmptyMin;   // minutes to 100% at this rate
+  long  toResetMin;   // minutes until the window resets
+  float atReset;      // projected % used at the reset (can pass 100)
+  float timeFrac;     // how far through the window we are, 0..1
+};
+
+static PaceInfo paceFor(const Window &w) {
+  PaceInfo p = {false, false, false, 0, -1, -1, 0, -1};
+  time_t now = time(nullptr);
+  long len = windowMinutes(w.key);
+  if (!timeSynced || now < 100000 || !w.resets_at || len < 0) return p;
+  p.toResetMin = (long)((w.resets_at - now) / 60);
+  if (p.toResetMin < 0) p.toResetMin = 0;
+  long elapsed = len - p.toResetMin;
+  if (elapsed < 0) elapsed = 0;
+  p.timeFrac = (float)elapsed / (float)len;
+  if (p.timeFrac > 1) p.timeFrac = 1;
+  if (w.utilization >= 99.5f) { p.ok = true; p.out = true; return p; }
+
+  // The session gets the last hour: five hours is short enough that what you
+  // are doing now decides it. The week gets the average since it began, since
+  // one busy afternoon says little about seven days.
+  float rate = -1;
+  if (!strcmp(w.key, "five_hour") && paceN >= 3) {
+    int newest = (paceHead - 1 + PACE_RING) % PACE_RING;
+    int oldest = (paceHead - paceN + PACE_RING) % PACE_RING;
+    long span = (long)(paceT[newest] - paceT[oldest]) / 60;
+    // Stale samples (the companion stopped, say) describe a pace that ended.
+    if (span >= 20 && now - paceT[newest] <= 1200)
+      rate = (paceU[newest] - paceU[oldest]) / (float)span;
+  }
+  if (rate < 0) {
+    // Too early in a window and one busy minute reads as a runaway. An hour in
+    // for the session and half a day for the week is enough to mean something.
+    long minElapsed = (len <= 300) ? 60 : 12 * 60;
+    if (elapsed < minElapsed) return p;
+    rate = w.utilization / (float)elapsed;
+  }
+  p.ok = true;
+  p.ratePerMin = rate;
+  p.atReset = w.utilization + rate * (float)p.toResetMin;
+  if (rate * (float)p.toResetMin < 1.0f) { p.idle = true; return p; }
+  p.toEmptyMin = (long)((100.0f - w.utilization) / rate);
+  return p;
+}
+
+// "3h 10m", or "1d 4h" once it is past a day. A week-long window needs days.
+static void fmtSpan(long mins, char *out, size_t n) {
+  if (mins < 0) mins = 0;
+  if (mins >= 1440) snprintf(out, n, "%ldd %ldh", mins / 1440, (mins % 1440) / 60);
+  else              fmtDur(mins, out, n);
+}
+
+// "9:40 PM" when it lands within the day, "Wed 9 AM" beyond that. A run-out
+// time days away is a weekday and an hour; minutes would be false precision.
+static void fmtWhen(time_t t, char *out, size_t n) {
+  struct tm tm;
+  localtime_r(&t, &tm);
+  char b[20];
+  if (t - time(nullptr) < 20L * 3600) {
+    strftime(b, sizeof(b), clock24 ? "%H:%M" : "%I:%M %p", &tm);
+    strlcpy(out, (!clock24 && b[0] == '0') ? b + 1 : b, n);
+  } else {
+    strftime(b, sizeof(b), clock24 ? "%a %H:00" : "%a %I %p", &tm);
+    if (!clock24 && b[4] == '0') memmove(b + 4, b + 5, strlen(b + 5) + 1);
+    strlcpy(out, b, n);
+  }
+}
+
 static void drawFocus() {
   gfx->fillScreen(C_BG);
   if (nWindows == 0) { drawMeters(); return; }   // nothing to focus yet
@@ -1069,37 +1222,28 @@ static void drawFocus() {
   if (wpx < mapLen(10)) wpx = mapLen(10);
   gfx->fillRoundRect(fbX, fbY, wpx, fbH, fbH / 2, fill);
 
-  // Projection (session window only): burn rate over the last ~hour of history
-  // vs. time to reset.
+  // Projection: the same calculation the Pace screen makes, so two screens
+  // can never disagree about one window.
   bool projected = false;
-  if (!strcmp(w.key, "five_hour") && timeSynced && histCount > 6) {
-    const int back = 6;                                   // 6 samples x 10 min
-    int oi = (histHead - 1 - back + 2 * HIST_LEN) % HIST_LEN;
-    float rate = (w.utilization - (float)histBuf[oi]) / (back * 10.0f);  // %/min
-    time_t now = time(nullptr);
-    long toReset = w.resets_at ? (long)((w.resets_at - now) / 60) : -1;
+  PaceInfo pc = paceFor(w);
+  if (pc.ok && !pc.out) {
     char e[16], r[16], d[44];
-    if (rate <= 0.03f) {                                  // barely burning
+    if (pc.idle) {
       drawCentered("holding steady", 256, 2, C_ACC);
       drawCentered("you'll reset with room to spare", 286, 1, C_MUTED);
-      projected = true;
     } else {
-      long toEmpty = (long)((100.0f - w.utilization) / rate);
-      fmtDur(toEmpty, e, sizeof(e));
-      if (toReset < 0) {
-        snprintf(d, sizeof(d), "runs out in ~%s", e);
-        drawCentered(d, 262, 2, toEmpty < 60 ? C_CRIT : C_WARN);
-      } else if (toEmpty >= toReset) {
-        fmtDur(toReset, r, sizeof(r));
+      long toEmpty = pc.toEmptyMin, toReset = pc.toResetMin;
+      fmtSpan(toEmpty, e, sizeof(e));
+      if (toEmpty >= toReset) {
+        fmtSpan(toReset, r, sizeof(r));
         drawCentered("resets before you run out", 256, 2, C_ACC);
         snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
         drawCentered(d, 286, 1, C_MUTED);
       } else {
-        char gap[16]; fmtDur(toReset - toEmpty, gap, sizeof(gap));
+        char gap[16]; fmtSpan(toReset - toEmpty, gap, sizeof(gap));
         snprintf(d, sizeof(d), "runs dry ~%s early", gap);
-        // With credits waiting, running dry is not a wall -- it is the point
-        // the cost starts. Same number, different news, so it should not wear
-        // the same red as a hard stop.
+        // With credits waiting, running dry is not a wall. It is where the
+        // cost starts. Same number, different news, so not the same red.
         bool netted = credOn && credAvail;
         drawCentered(d, 256, 2,
                      netted ? C_WARN
@@ -1107,13 +1251,13 @@ static void drawFocus() {
         if (netted) {
           drawCentered("then it comes out of credits", 286, 1, C_ACC);
         } else {
-          fmtDur(toReset, r, sizeof(r));
+          fmtSpan(toReset, r, sizeof(r));
           snprintf(d, sizeof(d), "empty ~%s   resets ~%s", e, r);
           drawCentered(d, 286, 1, C_MUTED);
         }
       }
-      projected = true;
     }
+    projected = true;
   }
   if (!projected) {
     fmtCountdown(w.resets_at, buf, sizeof(buf));
@@ -1133,6 +1277,137 @@ static void drawFocus() {
 
 // Headline metric to trend: the session window if present, else the fullest.
 // Float version (for exact trend detection) and a rounded one (for display).
+// The Pace screen. One sentence at the top worth reading from across the
+// desk, then a row per window: how much is used, a tick where an even pace
+// would have you by now, and what that pace means for the reset.
+static void drawPace() {
+  gfx->fillScreen(C_BG);
+  drawBattery(206, 8);
+  drawUpdateBadge(16, 16);
+  drawCentered("AT THIS PACE", 16, 1, C_MUTED);
+
+  // Up to three: session, weekly, then the first per-model weekly.
+  int rows[3], nr = 0;
+  int ses = findWindow("five_hour"), wk = findWindow("seven_day");
+  if (ses >= 0) rows[nr++] = ses;
+  if (wk >= 0) rows[nr++] = wk;
+  for (int i = 0; i < nWindows && nr < 3; i++)
+    if (i != ses && i != wk && windowMinutes(windows[i].key) > 0) rows[nr++] = i;
+
+  if (nr == 0) {
+    drawCentered("Pace", 120, 3, C_INK);
+    drawCentered(nWindows ? "no window it can project" : "waiting for usage data",
+                 160, 1, C_MUTED);
+    return;
+  }
+
+  PaceInfo pc[3];
+  for (int r = 0; r < nr; r++) pc[r] = paceFor(windows[rows[r]]);
+
+  // Out beats running out, running out soonest beats running out later, and
+  // "fine" is only said when at least one window could actually be judged.
+  int worst = -1;
+  bool worstOut = false, anyOk = false;
+  long soonest = 0x7FFFFFFFL;
+  for (int r = 0; r < nr; r++) {
+    if (!pc[r].ok) continue;
+    anyOk = true;
+    if (pc[r].out) {
+      if (!worstOut) { worst = r; worstOut = true; }
+      continue;
+    }
+    if (worstOut || pc[r].idle) continue;
+    if (pc[r].toEmptyMin < pc[r].toResetMin && pc[r].toEmptyMin < soonest) {
+      soonest = pc[r].toEmptyMin;
+      worst = r;
+    }
+  }
+  char l1[32], l2[32];
+  uint16_t hc = C_ACC;
+  if (worst >= 0 && worstOut) {
+    char sp[16];
+    fmtSpan(pc[worst].toResetMin, sp, sizeof(sp));
+    snprintf(l1, sizeof(l1), "%s is out", windows[rows[worst]].label);
+    snprintf(l2, sizeof(l2), "back in %s", sp);
+    hc = C_CRIT;
+  } else if (worst >= 0) {
+    snprintf(l1, sizeof(l1), "%s runs out", windows[rows[worst]].label);
+    fmtWhen(time(nullptr) + (time_t)pc[worst].toEmptyMin * 60, l2, sizeof(l2));
+    hc = pc[worst].toEmptyMin < 60 ? C_CRIT : C_WARN;
+  } else if (anyOk) {
+    strlcpy(l1, "On pace", sizeof(l1));
+    strlcpy(l2, "for every reset", sizeof(l2));
+  } else {
+    strlcpy(l1, "Too early", sizeof(l1));
+    strlcpy(l2, "to call it", sizeof(l2));
+    hc = C_MUTED;
+  }
+  drawCentered(l1, 34, 2, C_INK);
+  drawCentered(l2, 56, 2, hc);
+
+  int y = 94;
+  for (int r = 0; r < nr; r++) {
+    const Window &w = windows[rows[r]];
+    const PaceInfo &p = pc[r];
+    char buf[40];
+    drawLeft(w.label, 12, y, 2, C_INK);
+    snprintf(buf, sizeof(buf), "%d%% used", (int)(w.utilization + 0.5f));
+    int16_t x1, y1;
+    uint16_t tw, th;
+    gfx->setTextSize(mapSz(1));
+    gfx->getTextBounds(buf, 0, 0, &x1, &y1, &tw, &th);
+    gfx->setTextColor(C_MUTED);
+    gfx->setCursor(mapX(228) - (int)tw, mapY(y + 4));
+    gfx->print(buf);
+
+    // Used, not left: this bar is racing the clock, and both run left to
+    // right. The label says "used" so it cannot be read as a Meters bar.
+    bool early = p.ok && !p.out && !p.idle && p.toEmptyMin < p.toResetMin;
+    bool hot = early && p.toEmptyMin < 60;
+    uint16_t fill  = p.out ? C_CRIT   : hot ? C_CRIT   : early ? C_WARN   : C_ACC;
+    uint16_t track = p.out ? C_CRIT_T : hot ? C_CRIT_T : early ? C_WARN_T : C_ACC_T;
+    const int barX = mapX(12), barW = mapLen(216), barH = mapLen(10);
+    const int barY = mapY(y + 22);
+    gfx->fillRoundRect(barX, barY, barW, barH, barH / 2, track);
+    float used = w.utilization < 0 ? 0 : (w.utilization > 100 ? 100 : w.utilization);
+    int wpx = (int)(barW * used / 100.0f);
+    if (wpx > 0 && wpx < barH) wpx = barH;
+    if (wpx > 0) gfx->fillRoundRect(barX, barY, wpx, barH, barH / 2, fill);
+    // Where an even pace would have you by now. Fill past the mark means you
+    // are spending faster than the window lasts.
+    if (p.timeFrac >= 0) {
+      int tx = barX + (int)(barW * p.timeFrac);
+      gfx->fillRect(tx - mapLen(1), barY - mapLen(3), mapLen(2) > 0 ? mapLen(2) : 1,
+                    barH + mapLen(6), C_INK);
+    }
+
+    char v[44];
+    uint16_t vc = C_MUTED;
+    if (!p.ok) {
+      strlcpy(v, "too early in the window to tell", sizeof(v));
+    } else if (p.out) {
+      char sp[16];
+      fmtSpan(p.toResetMin, sp, sizeof(sp));
+      snprintf(v, sizeof(v), "out - back in %s", sp);
+      vc = C_CRIT;
+    } else if (p.idle) {
+      strlcpy(v, "holding steady", sizeof(v));
+    } else if (early) {
+      char when[20], gap[16];
+      fmtWhen(time(nullptr) + (time_t)p.toEmptyMin * 60, when, sizeof(when));
+      fmtSpan(p.toResetMin - p.toEmptyMin, gap, sizeof(gap));
+      if (credOn && credAvail) snprintf(v, sizeof(v), "out %s, then credits", when);
+      else                     snprintf(v, sizeof(v), "out %s, %s early", when, gap);
+      vc = fill;
+    } else {
+      snprintf(v, sizeof(v), "about %d%% used at reset", (int)(p.atReset + 0.5f));
+    }
+    drawLeft(v, 12, y + 40, 1, vc);
+    y += 64;
+  }
+  drawCentered("| marks where an even pace would be", 300, 1, C_MUTED);
+}
+
 static float headlineUtilF() {
   float best = -1;
   for (int i = 0; i < nWindows; i++) {
@@ -1256,6 +1531,7 @@ static int mascotMoodNow() {
 // Called after each usage update: a rise in utilization means tokens are being
 // spent right now, so the mascot wakes up and parties.
 static void noteUsageActivity() {
+  sampleSessionPace();
   float u = headlineUtilF();
   if (u >= 0) {
     // Any real upward move (even a fraction of a percent) means you're active.
@@ -1897,6 +2173,13 @@ static int enabledScreenCount() {
 // the power-on default, and this screen itself. The web form at /settings can
 // still do all three — this guard is about not letting a stray tap on a 2"
 // display hide the only thing that tells you where that form lives.
+// Inside an open prefs transaction. Both keys, for the reason given where
+// screenMask is declared.
+static void putScreenMask() {
+  prefs.putUShort("smask16", screenMask);
+  prefs.putUChar("smask", (uint8_t)(screenMask & 0xFF));
+}
+
 static bool toggleScreenAt(int i) {
   const char *why = nullptr;
   // Guard the *disable* direction only. Blocking both ways made a Settings row
@@ -1913,7 +2196,7 @@ static bool toggleScreenAt(int i) {
   }
   screenMask ^= (1 << i);
   prefs.begin("headroom", false);
-  prefs.putUChar("smask", screenMask);
+  putScreenMask();
   prefs.end();
   settingMsg[0] = 0;
   return true;
@@ -1950,15 +2233,18 @@ static void drawSettings() {
   gfx->drawFastHLine(mapX(14), mapY(106), mapLen(212), C_ACC_T);
   drawLeft("Screens in rotation", 14, 114, 1, C_MUTED);
 
-  int y = 132;
-  for (int i = 0; i < UI_SCREENS; i++) {
-    bool sel = (i == settingSel);
+  // Nine rows at 19px end at 280, clear of the hint line at 304. At the old
+  // 21px the ninth landed on it.
+  int y = 128;
+  for (int k = 0; k < UI_SCREENS; k++) {
+    int i = SCREEN_ORDER[k];
+    bool sel = (k == settingSel);
     bool on  = screenEnabled(i);
-    if (sel) gfx->fillRoundRect(mapX(10), mapY(y - 4), mapLen(220), mapLen(20),
+    if (sel) gfx->fillRoundRect(mapX(10), mapY(y - 4), mapLen(220), mapLen(18),
                                 mapLen(5), C_ACC_T);
     drawLeft(on ? "[x]" : "[ ]", 16, y, 1, on ? C_ACC : C_MUTED);
     drawLeft(SCREEN_NAMES[i], 46, y, 1, on ? C_INK : C_MUTED);
-    y += 21;
+    y += 19;
   }
 
   // A refusal has to say why, or the tap just looks broken. It fades so the
@@ -1985,6 +2271,7 @@ static void drawScreen() {
   else if (uiScreen == SCREEN_ACTIONS)  drawActions();
   else if (uiScreen == SCREEN_PROJECTS) drawProjects();
   else if (uiScreen == SCREEN_SETTINGS) drawSettings();
+  else if (uiScreen == SCREEN_PACE)     drawPace();
   else                                  drawMeters();
 }
 
@@ -2264,6 +2551,26 @@ static void handleStatus() {
   // without this, and the companion says so on the strength of it.
   doc["hw_ok"] = hwOk;
   if (hwNote[0]) doc["hw_note"] = hwNote;
+  // What the Pace screen would say about each window, so a projection that
+  // looks wrong on the glass can be checked against its inputs from a browser.
+  JsonArray paceArr = doc["pace"].to<JsonArray>();
+  for (int i = 0; i < nWindows; i++) {
+    if (windowMinutes(windows[i].key) < 0) continue;
+    PaceInfo pi = paceFor(windows[i]);
+    JsonObject o = paceArr.add<JsonObject>();
+    o["key"] = windows[i].key;
+    o["ok"] = pi.ok;
+    if (!pi.ok) continue;
+    o["out"] = pi.out;
+    o["idle"] = pi.idle;
+    o["time_frac"] = pi.timeFrac;
+    o["to_reset_min"] = pi.toResetMin;
+    if (!pi.out) {
+      o["rate_per_hour"] = pi.ratePerMin * 60.0f;
+      o["at_reset"] = pi.atReset;
+      if (!pi.idle) o["to_empty_min"] = pi.toEmptyMin;
+    }
+  }
   doc["theme"] = THEME_NAMES[uiTheme < 0 ? 0 : uiTheme];
   doc["avatar"] = AVATAR_NAMES[uiAvatar];
   doc["plan"] = plan[0] ? plan : (const char *)nullptr;
@@ -2717,7 +3024,10 @@ static void loadCreds() {
   strlcpy(tzEnv, prefs.getString("tz", tzEnv).c_str(), sizeof(tzEnv));
   clock24    = prefs.getBool("clk24", false);
   nightDim   = prefs.getBool("ndim", true);
-  screenMask = prefs.getUChar("smask", 0x1F);
+  // 0xFFFF cannot be a real mask with nine screens, so it doubles as "never
+  // saved" and a board upgrading from the one-byte key falls through to it.
+  uint16_t m16 = prefs.getUShort("smask16", 0xFFFF);
+  screenMask = (m16 != 0xFFFF) ? m16 : prefs.getUChar("smask", 0x1F);
   defaultScreen = prefs.getInt("dscr", 0);
   rotateSecs = prefs.getInt("rots", 0);
   pushToken  = prefs.getString("ptok", "");
@@ -2725,6 +3035,7 @@ static void loadCreds() {
   bool actionsMigrated = prefs.getBool("actmig", false);
   bool projectsMigrated = prefs.getBool("prjmig", false);
   bool settingsMigrated = prefs.getBool("setmig", false);
+  bool paceMigrated = prefs.getBool("pacemig", false);
   prefs.end();
   // Purge a refresh token left by firmware that used to sign itself in. Done
   // here rather than on the next saveCreds() because a board that is never
@@ -2750,7 +3061,7 @@ static void loadCreds() {
   // values of smask before the one that matters. The next new screen is one
   // more line inside the block rather than a fifth copy of it.
   if (!timerMigrated || !actionsMigrated || !projectsMigrated ||
-      !settingsMigrated) {
+      !settingsMigrated || !paceMigrated) {
     prefs.begin("headroom", false);
     if (!timerMigrated) {
       screenMask |= (1 << SCREEN_TIMER);    prefs.putBool("tmrmig", true);
@@ -2764,7 +3075,11 @@ static void loadCreds() {
     if (!settingsMigrated) {
       screenMask |= (1 << SCREEN_SETTINGS); prefs.putBool("setmig", true);
     }
-    prefs.putUChar("smask", screenMask);
+    // Pace needs nothing to work, so it is shown once like the others.
+    if (!paceMigrated) {
+      screenMask |= (1 << SCREEN_PACE);     prefs.putBool("pacemig", true);
+    }
+    putScreenMask();
     prefs.end();
   }
   uiScreen = defaultScreen;                 // boot on the chosen screen
@@ -3636,6 +3951,41 @@ static const char *TZ_OPTIONS[][2] = {
 static const int N_TZ = sizeof(TZ_OPTIONS) / sizeof(TZ_OPTIONS[0]);
 
 static void handleSettingsPage() {
+  // ?screens=meters,pace&default=pace&rotate=20 is how the setup wizard hands
+  // over the screens someone picked there. It fills the form in and nothing
+  // more: keeping them still takes Save, so a link can suggest settings but
+  // never change them.
+  bool fromSetup = false;
+  uint16_t pickMask = screenMask;
+  int pickDefault = defaultScreen, pickRotate = rotateSecs;
+  if (server->hasArg("screens")) {
+    String list = server->arg("screens");
+    uint16_t m = 0;
+    int from = 0;
+    while (from <= (int)list.length()) {
+      int comma = list.indexOf(',', from);
+      if (comma < 0) comma = list.length();
+      String name = list.substring(from, comma);
+      name.trim();
+      for (int i = 0; i < UI_SCREENS; i++)
+        if (name.equalsIgnoreCase(SCREEN_NAMES[i])) m |= (1 << i);
+      from = comma + 1;
+    }
+    if (m) {
+      fromSetup = true;
+      pickMask = m;
+      String d = server->arg("default");
+      for (int i = 0; i < UI_SCREENS; i++)
+        if (d.equalsIgnoreCase(SCREEN_NAMES[i]) && (m & (1 << i))) pickDefault = i;
+      if (!(pickMask & (1 << pickDefault)))       // the default must be one of them
+        for (int k = 0; k < UI_SCREENS; k++)
+          if (pickMask & (1 << SCREEN_ORDER[k])) { pickDefault = SCREEN_ORDER[k]; break; }
+      if (server->hasArg("rotate")) {
+        int r = server->arg("rotate").toInt();
+        if (r == 0 || r == 10 || r == 20 || r == 30 || r == 60) pickRotate = r;
+      }
+    }
+  }
   String s = F(
       "<!DOCTYPE html><html><head><meta charset=utf-8>"
       "<meta name=viewport content='width=device-width,initial-scale=1'>"
@@ -3672,24 +4022,35 @@ static void handleSettingsPage() {
   if (nightDim) s += " selected";
   s += F(">On (dim 10pm-7am)</option><option value=off");
   if (!nightDim) s += " selected";
-  s += F(">Off</option></select>"
-         "<label>Screens to show (tap the display to cycle these)</label>"
+  s += F(">Off</option></select>");
+  if (fromSetup)
+    s += F("<p id=screens style='background:#fbeee8;border-radius:10px;"
+           "padding:10px 12px;margin:6px 0 10px'>Your screen choices from setup "
+           "are filled in below. Press <b>Save</b> at the bottom to keep them.</p>");
+  s += F("<label>Screens to show (tap the display to cycle these)</label>"
          "<div style='margin:4px 0 12px'>");
-  for (int i = 0; i < UI_SCREENS; i++) {
-    s += "<label style='display:block;font-size:1rem;padding:3px 0'>"
+  // A name alone does not say what a screen is for, which made this list a
+  // guess for anyone who had not already tapped through all nine.
+  for (int k = 0; k < UI_SCREENS; k++) {
+    int i = SCREEN_ORDER[k];
+    s += "<label style='display:block;font-size:1rem;padding:5px 0'>"
          "<input type=checkbox name=scr";
     s += i;
     s += " value=1";
-    if (screenEnabled(i)) s += " checked";
+    if (pickMask & (1 << i)) s += " checked";
     s += "> ";
     s += SCREEN_NAMES[i];
-    s += "</label>";
+    s += "<span class=muted style='display:block;margin:1px 0 0 26px;"
+         "font-size:.82rem'>";
+    s += SCREEN_DESC[i];
+    s += "</span></label>";
   }
   s += F("</div><label>Default screen (shown at power-on)</label><select name=dscr>");
-  for (int i = 0; i < UI_SCREENS; i++) {
+  for (int k = 0; k < UI_SCREENS; k++) {
+    int i = SCREEN_ORDER[k];
     s += "<option value=";
     s += i;
-    if (i == defaultScreen) s += " selected";
+    if (i == pickDefault) s += " selected";
     s += ">";
     s += SCREEN_NAMES[i];
     s += "</option>";
@@ -3699,7 +4060,7 @@ static void handleSettingsPage() {
   for (int i = 0; i < 5; i++) {
     s += "<option value=";
     s += ROT_OPTS[i];
-    if (ROT_OPTS[i] == rotateSecs) s += " selected";
+    if (ROT_OPTS[i] == pickRotate) s += " selected";
     s += ">";
     if (ROT_OPTS[i] == 0) s += "Off (tap only)";
     else { s += "Every "; s += ROT_OPTS[i]; s += "s"; }
@@ -3779,7 +4140,7 @@ static void handleSettingsSave() {
   if (server->hasArg("dscr")) {              // the screen form is present
     int d = server->arg("dscr").toInt();
     if (d >= 0 && d < UI_SCREENS) defaultScreen = d;
-    uint8_t m = 0;
+    uint16_t m = 0;
     for (int i = 0; i < UI_SCREENS; i++)
       if (server->arg(String("scr") + i) == "1") m |= (1 << i);
     m |= (1 << defaultScreen);              // default always shown (also keeps m != 0)
@@ -3788,7 +4149,7 @@ static void handleSettingsSave() {
     if (r < 0) r = 0;
     if (r > 3600) r = 3600;
     rotateSecs = r;
-    prefs.putUChar("smask", screenMask);
+    putScreenMask();
     prefs.putInt("dscr", defaultScreen);
     prefs.putInt("rots", rotateSecs);
     if (!screenEnabled(uiScreen)) uiScreen = defaultScreen;  // current got turned off
@@ -4418,10 +4779,14 @@ static void wake() { screenOff = false; applyBacklight(); }
 // Next enabled screen in `dir` (+1 / -1), skipping ones the user turned off.
 // Returns `from` unchanged if it's the only one enabled.
 static int nextEnabled(int from, int dir) {
-  int c = from;
+  // Walk the display order, not the index order: Pace was appended to keep
+  // every saved index valid, but belongs next to the other usage screens.
+  int pos = 0;
+  for (int k = 0; k < UI_SCREENS; k++)
+    if (SCREEN_ORDER[k] == from) pos = k;
   for (int k = 0; k < UI_SCREENS; k++) {
-    c = (c + dir + UI_SCREENS) % UI_SCREENS;
-    if (screenEnabled(c)) return c;
+    pos = (pos + dir + UI_SCREENS) % UI_SCREENS;
+    if (screenEnabled(SCREEN_ORDER[pos])) return SCREEN_ORDER[pos];
   }
   return from;
 }
@@ -4464,7 +4829,7 @@ static void dispatchGesture(uint8_t g) {
       case 0x04: cycleScreen(+1); return;
       case 0x0C: cycleScreen(+1); return;                 // long press -> leave
       default:                                            // tap -> toggle row
-        toggleScreenAt(settingSel);
+        toggleScreenAt(SCREEN_ORDER[settingSel]);
         drawSettings();
         return;
     }
