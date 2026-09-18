@@ -50,6 +50,9 @@
 //   -DHR_TLS_INSECURE       no verification at all — local development only
 #if !defined(HR_TLS_INSECURE) && !defined(HR_TLS_CURATED_ROOTS)
 extern const uint8_t rootca_crt_bundle_start[] asm("_binary_x509_crt_bundle_start");
+// Core 3.x wants the length as well. It comes from the linker, the same way
+// the start symbol does, rather than being a number anyone has to maintain.
+extern const uint8_t rootca_crt_bundle_end[] asm("_binary_x509_crt_bundle_end");
 #endif
 
 static inline void tlsTrust(WiFiClientSecure &c) {
@@ -58,7 +61,8 @@ static inline void tlsTrust(WiFiClientSecure &c) {
 #elif defined(HR_TLS_CURATED_ROOTS)
   c.setCACert(HR_ROOT_CAS);
 #else
-  c.setCACertBundle(rootca_crt_bundle_start);
+  c.setCACertBundle(rootca_crt_bundle_start,
+                    (size_t)(rootca_crt_bundle_end - rootca_crt_bundle_start));
 #endif
 }
 
@@ -432,7 +436,6 @@ static String   pushToken;            // optional shared secret; when set, the
 static char     pollStatus[48] = "";  // last on-device poll result (shown when no data)
 
 // UI / input state (Phase 1.5)
-static const int BL_CHANNEL = 0;      // LEDC channel for backlight PWM
 static const int BOOT_BTN    = 0;     // BOOT button -> hold to factory reset
 #if HAS_BATTERY_ADC
 static const int BAT_ADC_PIN = VBAT_PIN;  // via the onboard divider (x3)
@@ -608,7 +611,7 @@ static void applyBacklight() {
   if (nightDim && nightNow() && eff > NIGHT_LEVEL) eff = NIGHT_LEVEL;
   if (screenOff) eff = 0;
 #if PANEL_HAS_BACKLIGHT
-  ledcWrite(BL_CHANNEL, eff);
+  ledcWrite(LCD_BL, eff);
 #else
   if (!displayReady) return;         // the bus that carries it isn't up yet
   static_cast<Arduino_CO5300 *>(gfx)->setBrightness(eff);
@@ -3059,13 +3062,26 @@ static String fetchLatestTagOnce() {
   https.addHeader("Accept", "application/vnd.github+json");
   int code = https.GET();
   if (code != 200) { https.end(); return ""; }
-  // Parse the tag straight from the response stream with a filter, so the whole
-  // 10-30KB release JSON never lands in one big String (heap/fragmentation).
+  // Read the body through HTTPClient rather than parsing its raw stream.
+  //
+  // The stream parse was there to keep the 10-30KB release JSON out of one big
+  // String, and it worked on core 2.x. It cannot work here. GitHub answers this
+  // endpoint with Transfer-Encoding: chunked about half the time, and the raw
+  // stream carries the chunk framing, which is not JSON. On the other half,
+  // core 3.x's client does not block waiting for the first byte, so the parse
+  // ran against an empty stream and failed 17ms after a 200. Both failures look
+  // identical from outside: "couldn't reach GitHub" on a check that reached it
+  // fine. The retry loop below was almost certainly hiding the chunked half of
+  // this on 2.x as well.
+  //
+  // getString() understands both shapes. The filter still applies, so only
+  // tag_name is kept, and the String is gone before the caller sees anything.
+  String body = https.getString();
   JsonDocument filter;
   filter["tag_name"] = true;
   JsonDocument doc;
   DeserializationError err =
-      deserializeJson(doc, https.getStream(), DeserializationOption::Filter(filter));
+      deserializeJson(doc, body, DeserializationOption::Filter(filter));
   https.end();
   if (err) return "";
   const char *tag = doc["tag_name"].as<const char *>();
@@ -4614,8 +4630,10 @@ void setup() {
   Serial.begin(115200);
   pinMode(BOOT_BTN, INPUT_PULLUP);   // hold 5s -> factory reset Wi-Fi
 #if PANEL_HAS_BACKLIGHT
-  ledcSetup(BL_CHANNEL, 5000, 8);    // backlight PWM (active high on this board)
-  ledcAttachPin(LCD_BL, BL_CHANNEL);
+  // Core 3.x attaches the pin and allocates the LEDC channel itself, and
+  // ledcWrite takes the pin rather than the channel. ledcSetup/ledcAttachPin
+  // are gone, which is why BL_CHANNEL is too.
+  ledcAttach(LCD_BL, 5000, 8);       // backlight PWM (active high on this board)
 #endif
   applyTheme(DEFAULT_THEME);         // before any drawing; loadCreds may change it
   gfx->begin(40000000);
