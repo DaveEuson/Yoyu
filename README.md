@@ -141,13 +141,20 @@ the command line, `companion.py --disconnect`.
 - **Meters** for every usage window Claude reports (5-hour session, weekly,
   weekly Opus…), fuel-gauge style. Amber under 30% left, red under 10%.
 - **Reset countdowns** and a clock.
+- **Pace.** Whether you will run out before each window resets, at the rate
+  you are going, in the same terms as Claude's own usage panel: "Weekly runs
+  out Wed 9 AM." The week is judged by your average since it started; the
+  session by the last hour, because five hours is short enough that what you
+  are doing now decides it. This is Yoyu's own calculation, since Anthropic's
+  usage data carries no forecast, so it can differ from Claude's panel.
 - **Usage credits**, once you go past your plan limits and start spending them.
   The money goes where the percentage does, plus a phone alert the first time a
   period tips over. It only appears when credits are actually being spent;
   having them available is a fact about your account, not about today.
-- **Eight screens**, cycled by a tap or on a timer: meters, focus, history,
-  your character, a timer, actions, projects and settings. Each one can be
-  switched off if you don't want it in the rotation.
+- **Nine screens**, cycled by a tap or on a timer: meters, focus, pace,
+  history, your character, a timer, actions, projects and settings. The setup
+  page shows each one and what it is for, so you can pick them before the
+  board is even on your desk, and any of them can be switched off later.
 - **Five characters**, and each one is a gauge. Every one shows how much
   headroom is left, in its own way. The **kitsune** fans out one to
   three tails; the **moon** waxes through its phase; the **candle** burns
