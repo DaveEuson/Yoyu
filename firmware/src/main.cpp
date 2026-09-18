@@ -2308,7 +2308,12 @@ static void checkExhaustion() {
   exhaustEpisode = ep;                           // claim it either way
 
   if (uiScreen == SCREEN_TIMER) return;          // already showing
-  if (!screenEnabled(SCREEN_TIMER)) return;      // Timer taken out of the rotation
+  // Deliberately not gated on Timer being in the rotation, which is what it
+  // used to do. Running out is an interruption, not a screen you chose to
+  // cycle through, and a board whose owner left Timer out is precisely the one
+  // with nothing else on it that says how long the wait is. This shows the
+  // countdown without adding Timer to the rotation: the next tap goes straight
+  // back to the screens that were actually picked.
   if (pairingActive()) return;                   // the one-time code owns the screen
   // Credits change what running out means. The takeover exists because the
   // only useful number, once a window is spent, is how long until you can work
