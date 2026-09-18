@@ -78,9 +78,16 @@ static inline void tlsTrust(WiFiClientSecure &c) {
 // which are D0..D3 on the panel datasheet.
 static Arduino_DataBus *bus =
     new Arduino_ESP32QSPI(QSPI_CS, QSPI_CLK, QSPI_D0, QSPI_D1, QSPI_D2, QSPI_D3);
+// No ips/invert argument here, unlike Arduino_ST7789 below. GFX 1.6.7 dropped
+// it from this constructor, and because every parameter is an integer the old
+// call still compiled: PANEL_INVERT went into the width, PANEL_W into the
+// height, PANEL_H into a uint8_t offset. A panel 480 tall and 0 wide draws
+// nothing at all, on a board that otherwise runs perfectly.
+static_assert(PANEL_INVERT == 0,
+              "Arduino_CO5300 takes no ips flag; an inverted OLED needs "
+              "invertDisplay() after begin(), not a constructor argument");
 static Arduino_GFX *gfx =
-    new Arduino_CO5300(bus, PANEL_RST, PANEL_ROTATION, PANEL_INVERT,
-                       PANEL_W, PANEL_H);
+    new Arduino_CO5300(bus, PANEL_RST, PANEL_ROTATION, PANEL_W, PANEL_H);
 #else
 static Arduino_DataBus *bus =
     new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCLK, LCD_MOSI, LCD_MISO);
@@ -380,7 +387,7 @@ static_assert(sizeof(AP_PSK) - 1 >= 8,
               "AP_PSK must be 8+ chars or WiFi.softAP() fails and the setup "
               "hotspot never appears -- see v1.6.0");
 static const int   API_PORT = 8080;   // what the companion probes
-static const char *FW_VERSION = "1.14.0";
+static const char *FW_VERSION = "1.14.1";
 
 // Phase 2 — self-contained: poll Anthropic's usage endpoint directly, using an
 // OAuth login pasted once via /connect. Same contract the companion uses.
@@ -388,7 +395,7 @@ static const char *CLIENT_ID   = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 static const char *REFRESH_URL = "https://platform.claude.com/v1/oauth/token";
 static const char *USAGE_URL   = "https://api.anthropic.com/api/oauth/usage";
 static const char *OAUTH_BETA  = "oauth-2025-04-20";
-static const char *UA          = "Yoyu/1.14.0";
+static const char *UA          = "Yoyu/1.14.1";
 // OTA self-update (over-the-air from the GitHub release)
 static const char *RELEASES_API =
     "https://api.github.com/repos/DaveEuson/Yoyu/releases/latest";
