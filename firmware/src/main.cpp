@@ -1427,14 +1427,27 @@ static void drawFocus() {
 // screen, and on a 1.47" panel that third is the difference between a bar you
 // can read from the doorway and one you have to walk up to. Bigger type, taller
 // bars, nothing else.
-// Largest whole text size whose string still fits `maxW`. The built-in font is
-// 6px per character at size 1 and scales in whole steps, so this is arithmetic
-// rather than measurement.
-static uint8_t fitSize(const char *t, int maxW, int want) {
+// Largest whole text size whose string fits `maxW` across and `maxH` down. The
+// built-in font is 6x8 at size 1 and scales in whole steps, so this is
+// arithmetic rather than measurement. Fitting the height as well as the width
+// is the whole point: a number sized to look right on a 320px panel runs over
+// everything under it when the same layout lands on one 172px tall.
+static uint8_t fitBox(const char *t, int maxW, int maxH, int want) {
   if (want < 1) want = 1;
-  while (want > 1 && (int)strlen(t) * 6 * want > maxW) want--;
+  int len = (int)strlen(t);
+  if (len < 1) len = 1;
+  while (want > 1 && (len * 6 * want > maxW || 8 * want > maxH)) want--;
   return (uint8_t)want;
 }
+
+// The three numbers every readout below is built from. A readout may land on
+// a panel 172, 240, 320 or 480 pixels tall, in either orientation, so nothing
+// in them is written as a pixel offset from the top.
+static int roPad()  { int p = scrW / 20; return p < 6 ? 6 : p; }
+static int roLine() { int l = scrH / 14; return l < 11 ? 11 : l; }
+// Caption size. Size 1 is 8px, which is right on a 172px panel and lost on a
+// 480px one.
+static uint8_t roCap() { return scrH >= 360 ? 2 : 1; }
 
 // ---- Readouts -------------------------------------------------------------
 //
@@ -1508,43 +1521,47 @@ static bool readoutCritical(const RowInfo *r, int n) {
 
 // ---- Codec: the default. One hero number per row, thin bar, flood on red ---
 static void roCodec(RowInfo *r, int n) {
-  int rowH = scrH / n, pad = scrW / 20;
-  if (pad < 4) pad = 4;
+  int rowH = scrH / n, pad = roPad();
   int innerW = scrW - 2 * pad;
+  // Four bands down the row, each a share of it, so the number can never grow
+  // into the bar under it.
+  int lblH = rowH * 2 / 10, numH = rowH * 4 / 10;
+  int barH = rowH / 10;
+  if (barH < 4) barH = 4;
   for (int i = 0; i < n; i++) {
     int top = i * rowH;
     bool flood = r[i].crit && pulseOn;
     if (r[i].crit) gfx->fillRect(0, top, scrW, rowH, flood ? C_CRIT : C_CRIT_T);
     uint16_t ink = r[i].crit ? (flood ? C_KNOCK : C_CRIT) : C_INK;
     uint16_t lbl = r[i].crit ? ink : C_MUTED;
-    uint8_t numSz = fitSize(r[i].pct, innerW, rowH / 2 / 8);
-    if (numSz < 2) numSz = 2;
-    uint8_t lblSz = fitSize(r[i].w->label, innerW, rowH / 5 / 8);
-    roText(r[i].w->label, pad, top + rowH / 12, lblSz, lbl);
-    roText(r[i].pct, pad, top + rowH / 12 + 8 * lblSz + 4, numSz, ink);
+    int y = top + rowH / 20;
+    roText(r[i].w->label, pad, y,
+           fitBox(r[i].w->label, innerW, lblH, lblH / 8), lbl);
+    y += lblH;
+    roText(r[i].pct, pad, y, fitBox(r[i].pct, innerW, numH, numH / 8), ink);
+    y += numH;
     if (!r[i].crit) {
-      int barH = rowH / 8, barY = top + rowH - barH - rowH / 6;
-      if (barH < 4) barH = 4;
-      gfx->fillRoundRect(pad, barY, innerW, barH, barH / 2, r[i].track);
+      gfx->fillRoundRect(pad, y, innerW, barH, barH / 2, r[i].track);
       int wpx = (int)(innerW * r[i].left / 100.0f);
-      if (wpx > 0) gfx->fillRoundRect(pad, barY, wpx, barH, barH / 2, r[i].fill);
+      if (wpx > 0) gfx->fillRoundRect(pad, y, wpx, barH, barH / 2, r[i].fill);
     }
-    roText(r[i].when, pad, top + rowH - rowH / 9, 1, lbl);
+    y += barH + rowH / 20;
+    roText(r[i].when, pad, y, 1, lbl);
   }
 }
 
 // ---- Tactical: a reticle. Corner brackets, ammunition cells ---------------
 static void roTactical(RowInfo *r, int n) {
-  (void)n;
   RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
   bool flood = a.crit && pulseOn;
   uint16_t hue = a.crit ? C_CRIT : a.warn ? C_WARN : C_ACC;
   char hdr[28];
   snprintf(hdr, sizeof(hdr), a.crit ? "[ ! %s ! ]" : "[ %s ]", a.w->label);
-  roText(hdr, 8, 10, 1, a.crit && !flood ? C_MUTED : hue);
+  roText(hdr, pad, lh / 2, roCap(), a.crit && !flood ? C_MUTED : hue);
 
   // Brackets, drawn as four corners of a frame that is never closed.
-  int bx = 10, by = 74, bw = scrW - 20, bh = scrH / 2;
+  int bx = pad, by = scrH * 3 / 16, bw = scrW - 2 * pad, bh = scrH * 7 / 16;
   int arm = bw / 6, th = 3;
   for (int c = 0; c < 4; c++) {
     int x = (c & 1) ? bx + bw - arm : bx;
@@ -1554,25 +1571,29 @@ static void roTactical(RowInfo *r, int n) {
     int vy = (c & 2) ? by + bh - arm : by;
     gfx->fillRect(vx, vy, th, arm, hue);
   }
-  uint8_t sz = fitSize(a.pct, bw - 20, bh / 8);
+  uint8_t sz = fitBox(a.pct, bw - 2 * pad, bh - 2 * th - 4, bh / 8);
   if (sz < 2) sz = 2;
   roText(a.pct, bx + (bw - (int)strlen(a.pct) * 6 * sz) / 2,
          by + (bh - 8 * sz) / 2, sz, hue);
 
-  roText(a.crit ? "RESERVE CRITICAL" : "REMAINING", 8, by + bh + 16, 1,
+  int y = by + bh + lh / 2;
+  roText(a.crit ? "RESERVE CRITICAL" : "REMAINING", pad, y, roCap(),
          a.crit ? C_CRIT : C_MUTED);
+  y += lh;
   // Ten cells: discrete beats continuous here, and a stub bar said nothing.
-  int cells = 10, cw = (scrW - 20) / cells, cy = by + bh + 32, ch = 14;
+  int cells = 10, cw = (scrW - 2 * pad) / cells, ch = lh;
   int lit = (int)((a.left + 5) / 10);
   for (int c = 0; c < cells; c++)
-    gfx->fillRect(10 + c * cw, cy, cw - 3, ch,
+    gfx->fillRect(pad + c * cw, y, cw - 3, ch,
                   c < lit ? hue : (flood ? C_CRIT_T : C_ACC_T));
+  y += ch + lh / 3;
   char line[32];
   snprintf(line, sizeof(line), "RESET %s", a.when);
-  roText(line, 8, cy + ch + 12, 1, C_MUTED);
+  roText(line, pad, y, roCap(), C_MUTED);
   if (n > 1) {
+    y += lh;
     snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
-    roText(line, 8, cy + ch + 28, 1, C_MUTED);
+    roText(line, pad, y, roCap(), C_MUTED);
   }
 }
 
@@ -1583,46 +1604,57 @@ static void roCrt(RowInfo *r, int n) {
   uint16_t bg = inv ? C_INK : C_BG, fg = inv ? C_KNOCK : C_INK;
   uint16_t dim = inv ? C_KNOCK : C_MUTED;
   if (inv) gfx->fillRect(0, 0, scrW, scrH, bg);
-  char line[40];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  char line[44];
+  int y = lh / 2;
   snprintf(line, sizeof(line), "YOYU SYS v%s", FW_VERSION);
-  roText(line, 8, 12, 1, dim);
-  roText("--------------------", 8, 28, 1, dim);
-  int y = 48;
+  roText(line, pad, y, cap, dim); y += lh;
+  roText("--------------------", pad, y, cap, dim); y += lh;
+  int bannerH = lh * 3 / 2;
   if (crit) {
-    roText("*** LOW RESERVE ***", 8, y, 2, fg);
-    y += 30;
+    roText("*** LOW RESERVE ***", pad, y,
+           fitBox("*** LOW RESERVE ***", scrW - 2 * pad, bannerH, 2), fg);
   } else {
     snprintf(line, sizeof(line), "> %s", r[0].w->label);
-    roText(line, 8, y, 2, fg);
-    y += 26;
+    roText(line, pad, y, fitBox(line, scrW - 2 * pad, bannerH, 2), fg);
   }
-  uint8_t sz = fitSize(r[0].pct, scrW - 16, 6);
-  roText(r[0].pct, 8, y, sz, fg);
-  y += 8 * sz + 14;
+  y += bannerH;
+  // The hero takes whatever the fixed lines below it leave.
+  int tail = lh * (3 + (n - 1));
+  int heroH = scrH - y - tail - lh / 2;
+  if (heroH < 16) heroH = 16;
+  uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 12);
+  roText(r[0].pct, pad, y + (heroH - 8 * sz) / 2, sz, fg);
+  y += heroH;
   snprintf(line, sizeof(line), "> RESET IN %s", r[0].when);
-  roText(line, 8, y, 1, dim); y += 20;
+  roText(line, pad, y, cap, dim); y += lh;
   for (int i = 1; i < n; i++) {
     snprintf(line, sizeof(line), "> %-8s %s", r[i].w->label, r[i].pct);
-    roText(line, 8, y, 1, dim); y += 20;
+    roText(line, pad, y, cap, dim); y += lh;
   }
-  roText("--------------------", 8, y + 8, 1, dim);
-  roText(crit ? "> STATUS CRITICAL" : "> STATUS OK", 8, y + 26, 1, fg);
-  if (pulseOn) roText("_", 8, y + 44, 2, fg);      // the cursor still blinks
+  roText("--------------------", pad, y, cap, dim); y += lh;
+  // The cursor rides the status line rather than taking one of its own, which
+  // is both more terminal-like and one line the short panels do not have.
+  snprintf(line, sizeof(line), "%s%s", crit ? "> STATUS CRITICAL" : "> STATUS OK",
+           pulseOn ? " _" : "");
+  roText(line, pad, y, cap, fg);
 }
 
 // ---- Ice: laboratory columns, filling bottom-up ---------------------------
 static void roIce(RowInfo *r, int n) {
   if (n > 2) n = 2;
-  int pad = 10, gap = 12;
+  int pad = roPad(), lh = roLine(), gap = pad;
   int colW = (scrW - 2 * pad - (n - 1) * gap) / n;
-  int top = 34, colH = scrH - top - 86;
+  int top = scrH / 5, numH = scrH / 5;
+  int colH = scrH - top - numH - lh * 2;
   if (readoutCritical(r, n) && pulseOn) {
     for (int b = 0; b < 4; b++)
       gfx->drawRect(b, b, scrW - 2 * b, scrH - 2 * b, C_CRIT);
   }
   for (int i = 0; i < n; i++) {
     int x = pad + i * (colW + gap);
-    roText(r[i].w->label, x, 12, 1, r[i].crit ? C_CRIT : C_MUTED);
+    roText(r[i].w->label, x, lh / 2, roCap(), r[i].crit ? C_CRIT : C_MUTED);
     gfx->fillRect(x, top, colW, colH, r[i].track);
     int h = (int)(colH * r[i].left / 100.0f);
     if (h < 3 && r[i].left > 0) h = 3;
@@ -1632,38 +1664,52 @@ static void roIce(RowInfo *r, int n) {
       int ty = top + colH - colH * q / 4;
       gfx->fillRect(x + colW + 2, ty, q == 2 ? 8 : 5, 2, C_MUTED);
     }
-    roText(r[i].pct, x, top + colH + 10, 3, r[i].crit ? C_CRIT : C_INK);
-    roText(r[i].when, x, top + colH + 44, 1, C_MUTED);
+    int y = top + colH + lh / 3;
+    roText(r[i].pct, x, y, fitBox(r[i].pct, colW, numH, numH / 8),
+           r[i].crit ? C_CRIT : C_INK);
+    roText(r[i].when, x, y + numH, roCap(), C_MUTED);
   }
 }
 
 // ---- Paper: a printed docket ----------------------------------------------
 static void roPaper(RowInfo *r, int n) {
-  roText("YOYU . USAGE DOCKET", 10, 14, 1, C_MUTED);
-  gfx->fillRect(10, 32, scrW - 20, 2, C_INK);
-  int y = 46;
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  roText("YOYU . USAGE DOCKET", pad, lh / 2, cap, C_MUTED);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 2, C_INK);
+  int y = lh * 2;
+  int footH = lh * 2;                        // the RESETS line and its rule
+  int body = scrH - y - footH;
+  // The first window is the one being read; the rest are a reference.
+  int h0 = n > 1 ? body * 3 / 5 : body;
   for (int i = 0; i < n; i++) {
+    int rh = i == 0 ? h0 : (body - h0) / (n - 1);
     char lead[32];
     snprintf(lead, sizeof(lead), "%s ............", r[i].w->label);
     lead[18] = 0;
-    roText(lead, 10, y, 1, C_MUTED);
-    roText(r[i].pct, 10, y + 16, i == 0 ? 5 : 3, r[i].crit ? C_CRIT : C_INK);
-    y += i == 0 ? 66 : 46;
-    gfx->fillRect(10, y - 10, scrW - 20, 1, C_ACC_T);
+    roText(lead, pad, y, cap, C_MUTED);
+    int nh = rh - lh - lh / 3;
+    roText(r[i].pct, pad, y + lh,
+           fitBox(r[i].pct, scrW - 2 * pad, nh, nh / 8),
+           r[i].crit ? C_CRIT : C_INK);
+    y += rh;
+    gfx->fillRect(pad, y - lh / 3, scrW - 2 * pad, 1, C_ACC_T);
   }
   if (readoutCritical(r, n)) {
     // The stamp. A real one would sit at an angle; the display cannot rotate a
     // filled box, so it lands square and leans on weight instead.
-    int bw = scrW - 40, bh = 52, bx = 20, by = scrH - 104;
+    int bw = scrW - 4 * pad, bh = lh * 3, bx = 2 * pad;
+    int by = lh * 2 + body / 2 - bh / 2;
     uint16_t c = pulseOn ? C_CRIT : C_CRIT_T;
     for (int b = 0; b < 4; b++)
       gfx->drawRect(bx + b, by + b, bw - 2 * b, bh - 2 * b, c);
-    roText("SPENT", bx + (bw - 5 * 6 * 3) / 2, by + (bh - 24) / 2, 3, c);
+    uint8_t sz = fitBox("SPENT", bw - 16, bh - 12, 5);
+    roText("SPENT", bx + (bw - 5 * 6 * sz) / 2, by + (bh - 8 * sz) / 2, sz, c);
   }
   char line[32];
   snprintf(line, sizeof(line), "RESETS %s", r[0].when);
-  roText(line, 10, scrH - 40, 1, C_MUTED);
-  roText(".....................", 10, scrH - 20, 1, C_ACC_T);
+  roText(line, pad, scrH - footH + lh / 4, cap, C_MUTED);
+  roText(".....................", pad, scrH - lh, cap, C_ACC_T);
 }
 
 // ---- Mono: Swiss. A hairline, one figure, nothing else --------------------
@@ -1672,159 +1718,200 @@ static void roMono(RowInfo *r, int n) {
   bool inv = crit && pulseOn;
   uint16_t fg = inv ? C_KNOCK : C_INK, dim = inv ? C_KNOCK : C_MUTED;
   if (inv) gfx->fillRect(0, 0, scrW, scrH, C_CRIT);
-  roText(r[0].w->label, 10, 12, 1, dim);
-  roRight(r[0].when, scrW - 10, 12, 1, dim);
-  gfx->fillRect(10, 26, scrW - 20, 1, dim);
-  uint8_t sz = fitSize(r[0].pct, scrW - 20, 9);
-  roText(r[0].pct, 10, 62, sz, fg);
-  int y = 62 + 8 * sz + 22;
-  int w = (int)((scrW - 20) * r[0].left / 100.0f);
-  gfx->fillRect(10, y, scrW - 20, 4, inv ? C_CRIT_T : C_ACC_T);
-  gfx->fillRect(10, y, w, 4, fg);
-  roText("PER CENT REMAINING", 10, y + 16, 1, dim);
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  roText(r[0].w->label, pad, lh / 2, cap, dim);
+  roRight(r[0].when, scrW - pad, lh / 2, cap, dim);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, dim);
+  int y = lh * 2;
+  int tail = n > 1 ? lh * 4 : lh * 2;
+  int heroH = scrH - y - tail;
+  uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 20);
+  // Sat on the baseline of its band rather than centred: the figure is the
+  // only thing on this screen, and it should sit where the eye expects type.
+  roText(r[0].pct, pad, y + heroH - 8 * sz, sz, fg);
+  y += heroH + lh / 3;
+  int w = (int)((scrW - 2 * pad) * r[0].left / 100.0f);
+  gfx->fillRect(pad, y, scrW - 2 * pad, 4, inv ? C_CRIT_T : C_ACC_T);
+  gfx->fillRect(pad, y, w, 4, fg);
+  roText("PER CENT REMAINING", pad, y + lh / 2, cap, dim);
   if (n > 1) {
-    gfx->fillRect(10, scrH - 78, scrW - 20, 1, inv ? C_CRIT_T : C_ACC_T);
-    roText(r[1].w->label, 10, scrH - 66, 1, dim);
-    roText(r[1].pct, 10, scrH - 48, 3, fg);
+    y += lh * 3 / 2;
+    gfx->fillRect(pad, y, scrW - 2 * pad, 1, inv ? C_CRIT_T : C_ACC_T);
+    roText(r[1].w->label, pad, y + lh / 3, cap, dim);
+    roRight(r[1].pct, scrW - pad, y + lh / 3, cap, fg);
   }
 }
 
 // ---- Sakura: a capsule holds the number, petals mark the quarters ---------
 static void roSakura(RowInfo *r, int n) {
   RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
   bool flood = a.crit && pulseOn;
-  int capX = 12, capY = 40, capW = scrW - 24, capH = scrH / 3;
-  uint16_t cap = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
-  roText(a.w->label, 12, 16, 1, a.crit ? C_CRIT : C_MUTED);
-  gfx->fillRoundRect(capX, capY, capW, capH, capH / 4, cap);
-  uint8_t sz = fitSize(a.pct, capW - 20, capH / 10);
+  int capX = pad, capW = scrW - 2 * pad;
+  int capY = lh * 3 / 2, capH = scrH * 2 / 5;
+  uint16_t capc = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
+  roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  gfx->fillRoundRect(capX, capY, capW, capH, capH / 4, capc);
+  uint8_t sz = fitBox(a.pct, capW - 2 * pad, capH - lh / 2, capH / 8);
   if (sz < 2) sz = 2;
   roText(a.pct, capX + (capW - (int)strlen(a.pct) * 6 * sz) / 2,
          capY + (capH - 8 * sz) / 2, sz, a.crit ? C_KNOCK : C_INK);
-  int by = capY + capH + 22;
+  int y = capY + capH + lh;
   if (a.crit) {
-    roText("almost out!", 12, by, 2, C_CRIT);
+    roText("almost out!", pad, y,
+           fitBox("almost out!", capW, lh * 2, 2), C_CRIT);
+    y += lh * 2;
   } else {
-    gfx->fillRoundRect(12, by, scrW - 24, 14, 7, a.track);
-    int w = (int)((scrW - 24) * a.left / 100.0f);
-    if (w > 0) gfx->fillRoundRect(12, by, w, 14, 7, a.fill);
+    int barH = lh;
+    gfx->fillRoundRect(pad, y, capW, barH, barH / 2, a.track);
+    int w = (int)(capW * a.left / 100.0f);
+    if (w > 0) gfx->fillRoundRect(pad, y, w, barH, barH / 2, a.fill);
     for (int q = 1; q < 4; q++)          // petals, not ticks
-      gfx->fillCircle(12 + (scrW - 24) * q / 4, by + 24, 3, C_MUTED);
+      gfx->fillCircle(pad + capW * q / 4, y + barH + lh / 2, 3, C_MUTED);
+    y += barH + lh;
   }
   char line[32];
   snprintf(line, sizeof(line), "back in %s", a.when);
-  roText(line, 12, by + 40, 1, C_MUTED);
+  roText(line, pad, y, cap, C_MUTED);
   if (n > 1) {
-    roText(r[1].w->label, 12, scrH - 54, 1, C_MUTED);
-    roText(r[1].pct, 12, scrH - 36, 3, C_INK);
+    y += lh;
+    roText(r[1].w->label, pad, y, cap, C_MUTED);
+    roRight(r[1].pct, scrW - pad, y, cap, C_INK);
   }
 }
 
 // ---- Neon Noir: a slash of light, the number doubled as its own glow ------
 static void roNoir(RowInfo *r, int n) {
   RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
   bool flood = a.crit && pulseOn;
   // The slash: a stack of offset rows, which is how you draw a diagonal on a
   // display that cannot rotate anything.
-  int bandTop = a.crit ? 40 : 70, bandH = a.crit ? scrH / 2 : scrH / 4;
+  int bandTop = a.crit ? lh * 2 : scrH * 5 / 16;
+  int bandH   = a.crit ? scrH / 2 : scrH / 4;
   uint16_t band = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
   for (int y = 0; y < bandH; y++)
     gfx->drawFastHLine(-40 + (y * scrW) / (bandH * 3), bandTop + y, scrW + 40, band);
-  roText(a.w->label, 10, 16, 1, a.crit ? C_CRIT : C_MUTED);
-  uint8_t sz = fitSize(a.pct, scrW - 20, 9);
+  roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  // The number may stand taller than its band -- that overhang is the look --
+  // but not so tall that it reaches the header or the rule under it.
+  uint8_t sz = fitBox(a.pct, scrW - 2 * pad, bandH + lh, 20);
   if (sz < 2) sz = 2;
+  int ny = bandTop + (bandH - 8 * sz) / 2;
+  if (ny < lh * 2) ny = lh * 2;
   // Drawn twice, offset: the second pass is the glow, in the other hue.
-  roText(a.pct, 14, bandTop + 14, sz, a.crit ? C_WARN : C_ACC);
-  roText(a.pct, 10, bandTop + 10, sz, a.crit ? C_KNOCK : C_INK);
-  int uy = bandTop + bandH + 14;
-  gfx->fillRect(10, uy, scrW - 20, 3, C_ACC);
-  roText(a.crit ? "OUT SOON" : "PER CENT LEFT", 10, uy + 12, 1, C_MUTED);
+  roText(a.pct, pad + 4, ny + 4, sz, a.crit ? C_WARN : C_ACC);
+  roText(a.pct, pad, ny, sz, a.crit ? C_KNOCK : C_INK);
+  int y = bandTop + bandH + lh / 2;
+  if (y < ny + 8 * sz + lh / 2) y = ny + 8 * sz + lh / 2;
+  gfx->fillRect(pad, y, scrW - 2 * pad, 3, C_ACC);
+  y += lh / 2;
+  roText(a.crit ? "OUT SOON" : "PER CENT LEFT", pad, y, cap, C_MUTED);
+  y += lh;
   char line[32];
   snprintf(line, sizeof(line), "RESET %s", a.when);
-  roText(line, 10, uy + 34, 1, C_MUTED);
+  roText(line, pad, y, cap, C_MUTED);
   if (n > 1) {
-    roText(r[1].w->label, 10, scrH - 54, 1, C_MUTED);
-    roText(r[1].pct, 10, scrH - 36, 3, C_INK);
+    y += lh;
+    roText(r[1].w->label, pad, y, cap, C_MUTED);
+    roRight(r[1].pct, scrW - pad, y, cap, C_INK);
   }
 }
 
 // ---- Blueprint: headroom drawn as a measured dimension -------------------
 static void roBlueprint(RowInfo *r, int n) {
   RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
   char hdr[34];
   snprintf(hdr, sizeof(hdr), a.crit ? "FIG.1 %s . REVISE" : "FIG.1 %s", a.w->label);
-  roText(hdr, 10, 12, 1, a.crit ? C_CRIT : C_MUTED);
-  gfx->fillRect(10, 30, scrW - 20, 1, a.crit ? C_CRIT : C_ACC_T);
+  roText(hdr, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, a.crit ? C_CRIT : C_ACC_T);
 
-  int left = 10, right = scrW - 10, dimY = scrH / 2 - 30;
+  int left = pad, right = scrW - pad;
+  int wTop = lh * 2, wH = scrH / 3;
+  int dimY = wTop + wH / 2;
   int mark = left + (int)((right - left) * a.left / 100.0f);
   // Witness lines at each end and at the measurement, then the dimension run
   // between them with arrowheads. This is the whole conceit of the theme.
-  gfx->fillRect(left, 70, 1, 150, C_MUTED);
-  gfx->fillRect(right, 70, 1, 150, C_MUTED);
-  gfx->fillRect(mark, 70, 1, 150, a.crit ? C_CRIT : C_ACC);
+  gfx->fillRect(left, wTop, 1, wH, C_MUTED);
+  gfx->fillRect(right, wTop, 1, wH, C_MUTED);
+  gfx->fillRect(mark, wTop, 1, wH, a.crit ? C_CRIT : C_ACC);
   gfx->fillRect(left, dimY, mark - left, 2, a.crit ? C_CRIT : C_ACC);
   gfx->fillRect(mark, dimY, right - mark, 2, C_ACC_T);
   for (int t = 0; t < 5; t++) {        // arrowheads
     gfx->drawFastVLine(left + t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
     gfx->drawFastVLine(mark - t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
   }
-  char cap[24];
-  snprintf(cap, sizeof(cap), "<-- %s -->", a.pct);
-  roText(cap, left + 6, dimY - 20, 1, a.crit ? C_CRIT : C_ACC);
-  uint8_t sz = fitSize(a.pct, scrW - 20, 6);
-  roText(a.pct, 10, dimY + 20, sz, a.crit ? C_CRIT : C_INK);
-  if (a.crit) {
-    int by = scrH - 92;
-    gfx->drawRect(10, by, scrW - 40, 26, C_CRIT);
-    char note[32];
-    snprintf(note, sizeof(note), "NOTE: RESET %s", a.when);
-    roText(note, 16, by + 8, 1, C_CRIT);
-  } else {
-    char line[36];
-    snprintf(line, sizeof(line), "RESET .... %s", a.when);
-    roText(line, 10, scrH - 56, 1, C_MUTED);
-  }
+  char cap2[24];
+  snprintf(cap2, sizeof(cap2), "<-- %s -->", a.pct);
+  roText(cap2, left + 6, dimY - lh, cap, a.crit ? C_CRIT : C_ACC);
+
+  int y = wTop + wH + lh / 2;
+  int tail = n > 1 ? lh * 2 : lh;
+  int heroH = scrH - y - tail - lh / 2;
+  if (heroH < 16) heroH = 16;
+  roText(a.pct, pad, y, fitBox(a.pct, scrW - 2 * pad, heroH, 20),
+         a.crit ? C_CRIT : C_INK);
+  y += heroH;
+  char line[36];
+  // The note that used to sit in its own box: a drawing revision reads as a
+  // line on the sheet, and a box needed height these panels do not have.
+  if (a.crit) snprintf(line, sizeof(line), "NOTE: RESET %s", a.when);
+  else        snprintf(line, sizeof(line), "RESET .... %s", a.when);
+  roText(line, pad, y, cap, a.crit ? C_CRIT : C_MUTED);
   if (n > 1) {
-    char line[36];
+    y += lh;
     snprintf(line, sizeof(line), "%s ... %s", r[1].w->label, r[1].pct);
-    roText(line, 10, scrH - 34, 1, C_MUTED);
+    roText(line, pad, y, cap, C_MUTED);
   }
 }
 
 // ---- Handheld: a 1989 pocket game -----------------------------------------
 static void roHandheld(RowInfo *r, int n) {
   RowInfo &a = r[0];
-  int box = scrW - 16;
-  gfx->drawRect(8, 10, box, 56, C_INK);
-  gfx->drawRect(9, 11, box - 2, 54, C_INK);
-  roText(a.w->label, 16, 20, 2, C_INK);
-  if (a.crit && pulseOn) roText("!! LOW HP !!", 16, 44, 1, C_INK);
-  else if (!a.crit)      roText("HP", 16, 44, 1, C_MUTED);
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  int boxW = scrW - 2 * pad, topH = lh * 3;
+  gfx->drawRect(pad, lh / 2, boxW, topH, C_INK);
+  gfx->drawRect(pad + 1, lh / 2 + 1, boxW - 2, topH - 2, C_INK);
+  roText(a.w->label, pad + lh / 2, lh,
+         fitBox(a.w->label, boxW - lh, lh * 3 / 2, lh * 3 / 2 / 8), C_INK);
+  if (a.crit && pulseOn) roText("!! LOW HP !!", pad + lh / 2, lh * 2 + lh / 4, cap, C_INK);
+  else if (!a.crit)      roText("HP", pad + lh / 2, lh * 2 + lh / 4, cap, C_MUTED);
 
   // The HP bar: ten cells, because a handheld never showed you a percentage
   // it could show you as hearts.
-  int cells = 10, cw = (scrW - 20) / cells, cy = 80, ch = 20;
-  gfx->drawRect(8, cy - 4, scrW - 16, ch + 8, C_INK);
+  int cells = 10, cw = boxW / cells, ch = lh;
+  int cy = lh / 2 + topH + lh / 2;
+  gfx->drawRect(pad, cy - 4, boxW, ch + 8, C_INK);
   int lit = (int)((a.left + 5) / 10);
   for (int c = 0; c < cells; c++) {
     bool on = c < lit;
     if (a.crit && c == 0 && !pulseOn) on = false;   // the last heart flashes
-    gfx->fillRect(12 + c * cw, cy, cw - 3, ch, on ? C_INK : C_ACC_T);
+    gfx->fillRect(pad + 4 + c * cw, cy, cw - 3, ch, on ? C_INK : C_ACC_T);
   }
-  uint8_t sz = fitSize(a.pct, scrW - 28, 8);
-  roText(a.pct, 14, 124, sz, C_INK);
 
-  int dy = scrH - 100;
-  gfx->drawRect(8, dy, scrW - 16, 90, C_INK);
-  gfx->drawRect(9, dy + 1, scrW - 18, 88, C_INK);
-  roText(a.crit ? "NEARLY SPENT!" : "PLENTY LEFT.", 16, dy + 14, 1, C_INK);
+  int botH = lh * 3 + (n > 1 ? lh : 0);
+  int botY = scrH - botH - lh / 2;
+  int y = cy + ch + lh / 2;
+  int heroH = botY - y - lh / 2;
+  if (heroH < 16) heroH = 16;
+  roText(a.pct, pad + 2, y, fitBox(a.pct, boxW, heroH, 20), C_INK);
+
+  gfx->drawRect(pad, botY, boxW, botH, C_INK);
+  gfx->drawRect(pad + 1, botY + 1, boxW - 2, botH - 2, C_INK);
+  roText(a.crit ? "NEARLY SPENT!" : "PLENTY LEFT.", pad + lh / 2,
+         botY + lh / 2, cap, C_INK);
   char line[32];
   snprintf(line, sizeof(line), "REFILLS IN %s.", a.when);
-  roText(line, 16, dy + 34, 1, C_INK);
+  roText(line, pad + lh / 2, botY + lh * 3 / 2, cap, C_INK);
   if (n > 1) {
     snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
-    roText(line, 16, dy + 64, 1, C_MUTED);
+    roText(line, pad + lh / 2, botY + lh * 5 / 2, cap, C_MUTED);
   }
 }
 
