@@ -31,6 +31,7 @@
 #endif
 #include <mbedtls/md.h>
 #include <esp_random.h>
+#include <esp_system.h>
 #include <mbedtls/pk.h>
 #include "ota_pubkey.h"
 
@@ -481,6 +482,35 @@ static int nWindowsSeen = 0;
 static char plan[16] = "";
 static unsigned long lastPushMs = 0;   // millis() of last accepted push
 static bool timeSynced = false;
+
+// Why the board last started. A silent reboot restores whatever NVS last
+// committed, which can be an older set of settings than the one you just
+// saved -- and with nothing recording the restart, that looks like the board
+// quietly undoing your changes rather than like a crash. A brownout is the
+// one to watch for on the AMOLED, whose panel draws hardest exactly when it
+// redraws.
+static esp_reset_reason_t bootReason = ESP_RST_UNKNOWN;
+
+static const char *resetReasonName() {
+  switch (bootReason) {
+    case ESP_RST_POWERON:   return "power-on";
+    case ESP_RST_EXT:       return "reset pin";
+    case ESP_RST_SW:        return "software";     // our own ESP.restart()
+    case ESP_RST_PANIC:     return "crash";
+    case ESP_RST_INT_WDT:   return "interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "task watchdog";
+    case ESP_RST_WDT:       return "watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    case ESP_RST_USB:       return "usb";        // esptool toggling the port
+    case ESP_RST_JTAG:      return "jtag";
+    case ESP_RST_EFUSE:     return "efuse error";
+    case ESP_RST_PWR_GLITCH: return "power glitch";
+    case ESP_RST_CPU_LOCKUP: return "cpu lockup";
+    default:                return "unknown";
+  }
+}
 
 static Preferences prefs;
 static WebServer *server = nullptr;
@@ -3234,6 +3264,11 @@ static void handleStatus() {
   // be done by eye or by scraping /update — neither of which works for a board
   // on a shelf, or for more than one at a time.
   doc["version"] = FW_VERSION;
+  doc["reset_reason"] = resetReasonName();
+  doc["reset_code"] = (int)bootReason;   // so an unmapped reason is still readable
+  // Seconds since that reset. Free, and it is what makes a restart visible
+  // between two polls without having to catch the board while it is down.
+  doc["uptime_s"] = (uint32_t)(millis() / 1000);
   doc["self_hosted"] = selfHosted;
   doc["board"] = BOARD_SLUG;          // which panel this build drives
   // False means this firmware is on the wrong board: it runs, but it cannot
@@ -5919,6 +5954,7 @@ static void startApi() {
 
 void setup() {
   Serial.begin(115200);
+  bootReason = esp_reset_reason();
   pinMode(BOOT_BTN, INPUT_PULLUP);   // hold 5s -> factory reset Wi-Fi
 #if PANEL_HAS_BACKLIGHT
   // Core 3.x attaches the pin and allocates the LEDC channel itself, and
