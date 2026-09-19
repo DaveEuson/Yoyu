@@ -171,7 +171,7 @@
 
   /* ---- Screen picker ----------------------------------------------------
      Each screen shown as itself, small, next to what it is for. A list of
-     names made this a guess for anyone who had not tapped through all nine,
+     names made this a guess for anyone who had not tapped through them all,
      which is everyone at setup. */
   .scr{list-style:none;margin:14px 0 4px;padding:0;display:grid;
     grid-template-columns:1fr;gap:8px}
@@ -202,6 +202,33 @@
   .scrcard label:has(input:not(:checked)) .thumb{opacity:.4;filter:grayscale(.7)}
   .scrcard label:has(input:not(:checked)) strong{color:var(--muted)}
   .scrcount{font-size:.82rem;color:var(--muted);margin:6px 0 0}
+
+  /* ---- Theme picker -----------------------------------------------------
+     A theme is a palette and a layout, and the layout is the half a name
+     cannot carry. Each card is the readout screen drawn the way that theme
+     draws it -- the same caricature the board's own settings page shows, so
+     what is picked here is recognisable when it arrives there. */
+  .thmhead{margin:22px 0 0;padding-top:18px;border-top:1px solid var(--line)}
+  .thm{list-style:none;margin:12px 0 4px;padding:0;display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px}
+  .thmcard label{display:flex;flex-direction:column;align-items:center;gap:7px;
+    height:100%;background:var(--raised);border:1px solid var(--line);
+    border-radius:12px;padding:10px 6px 9px;cursor:pointer;text-align:center;
+    transition:border-color .2s var(--out),box-shadow .2s var(--out)}
+  .thmcard label:hover{border-color:var(--acc)}
+  .thmcard label:has(input:checked){border-color:var(--acc-deep);
+    box-shadow:0 0 0 1px var(--acc-deep)}
+  .thmcard .thumb{width:52px;height:84px;border-radius:5px;flex:0 0 auto;
+    transition:opacity .2s var(--out)}
+  .thmcard label:has(input:not(:checked)) .thumb{opacity:.78}
+  .thmtext{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .thmtext strong{font-size:.86rem}
+  .thmtext span{font-size:.72rem;color:var(--muted);line-height:1.3}
+  /* The radio is the card. Hiding it outright would take the keyboard with
+     it, so it keeps its box and sits where focus can show. */
+  .thmcard input{position:absolute;width:1px;height:1px;opacity:0;margin:0}
+  .thmcard label:has(input:focus-visible){outline:2px solid var(--acc-deep);
+    outline-offset:2px}
   .scropts{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
   .scropts label{flex:1 1 180px;font-size:.85rem;color:var(--muted);
     display:flex;flex-direction:column;gap:4px}
@@ -216,7 +243,8 @@
   #scrsend{text-decoration:none}
   #scrsend[aria-disabled="true"]{opacity:.5;pointer-events:none}
   @media (prefers-reduced-motion:reduce){
-    .scrcard input,.scrcard input::after,.scrcard .thumb{transition:none}}
+    .scrcard input,.scrcard input::after,.scrcard .thumb{transition:none}
+    .thmcard label,.thmcard .thumb{transition:none}}
   .links{font-size:.85rem;color:var(--muted);margin:8px 2px 0;text-align:center}
   .disclose{color:var(--muted);font-size:.76rem;text-align:center;margin:10px 0 0}
   /* Once chosen, the choice stays legible at the top of every later step —
@@ -527,16 +555,21 @@
 
   <section class="card stepcard" data-step="4">
     <div class="step"><span class="num">4</span><h2 tabindex="-1">Choose your screens</h2></div>
-    <p>The board has nine screens. Keep the ones you will use and the rest stay
+    <p>The board has ten screens. Keep the ones you will use and the rest stay
       out of the rotation.<span class="lcd-only"> Tap the board to go from one
       to the next.</span><span class="amoled-only"> This board has no working
       touch, so they change on their own.</span> Skip this and a new board
-      shows all nine.</p>
+      shows all ten.</p>
     <ul class="scr" id="scrlist">
       <li class="scrcard"><label>
         <input type="checkbox" value="meters" checked>
         <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="7" y="9" width="16" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="15" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="15" width="32" height="6" rx="3" fill="#d97757"/><rect x="7" y="31" width="12" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="37" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="37" width="20" height="6" rx="3" fill="#d97757"/><rect x="7" y="53" width="19" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="59" width="46" height="6" rx="3" fill="#2c2721"/><rect x="7" y="59" width="40" height="6" rx="3" fill="#d97757"/></svg>
         <span class="scrtext"><strong>Meters</strong><span>Every usage window as a bar, with its reset countdown.</span></span>
+      </label></li>
+      <li class="scrcard"><label>
+        <input type="checkbox" value="micro" checked>
+        <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="7" y="8" width="20" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="15" width="32" height="17" rx="1" fill="#faf7ef"/><rect x="7" y="38" width="46" height="5" rx="2.5" fill="#2c2721"/><rect x="7" y="38" width="28" height="5" rx="2.5" fill="#d97757"/><rect x="7" y="50" width="20" height="3" rx="1.5" fill="#6b6759"/><rect x="7" y="57" width="32" height="14" rx="1" fill="#faf7ef"/></svg>
+        <span class="scrtext"><strong>Micro</strong><span>The windows that matter, big, drawn in your theme’s own layout.</span></span>
       </label></li>
       <li class="scrcard"><label>
         <input type="checkbox" value="focus" checked>
@@ -582,7 +615,7 @@
     <p class="scrcount" id="scrcount" aria-live="polite"></p>
     <div class="scropts">
       <label>Show first
-        <select id="scrdefault"><option value="meters" selected>Meters</option><option value="focus">Focus</option><option value="pace">Pace</option><option value="history">History</option><option value="yoyu">Yoyu</option><option value="timer">Timer</option><option value="actions">Actions</option><option value="projects">Projects</option><option value="settings">Settings</option></select></label>
+        <select id="scrdefault"><option value="meters" selected>Meters</option><option value="micro">Micro</option><option value="focus">Focus</option><option value="pace">Pace</option><option value="history">History</option><option value="yoyu">Yoyu</option><option value="timer">Timer</option><option value="actions">Actions</option><option value="projects">Projects</option><option value="settings">Settings</option></select></label>
       <label>Change screens
         <select id="scrrotate">
           <option value="0">When I tap it</option>
@@ -592,6 +625,81 @@
           <option value="60">Every minute</option>
         </select></label>
     </div>
+    <div class="thmhead">
+      <h3>Pick a look</h3>
+      <p class="muted" style="margin:2px 0 0;font-size:.85rem">Each one is a
+        palette <em style="font-style:normal;font-weight:600">and</em> a layout:
+        the screen you will stare at most is drawn a different way in every
+        theme. You can change it any time on the board.</p>
+    </div>
+    <ul class="thm" id="thmlist">
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="0" checked>
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#262624"/><rect x="8" y="10" width="22" height="4" fill="#94907e"/><rect x="8" y="20" width="34" height="22" fill="#f5f4ef"/><rect x="8" y="50" width="48" height="6" fill="#4a382f" rx="3"/><rect x="8" y="50" width="30" height="6" fill="#d97757" rx="3"/><rect x="8" y="66" width="22" height="4" fill="#94907e"/><rect x="8" y="76" width="34" height="18" fill="#f5f4ef"/></svg>
+        <span class="thmtext"><strong>Night</strong><span>The plain layout, warm and dark.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="1">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0a0a0a"/><rect x="8" y="10" width="22" height="4" fill="#55534b"/><rect x="8" y="20" width="34" height="22" fill="#9a9890"/><rect x="8" y="50" width="48" height="6" fill="#2a2019" rx="3"/><rect x="8" y="50" width="30" height="6" fill="#8a4c37" rx="3"/><rect x="8" y="66" width="22" height="4" fill="#55534b"/><rect x="8" y="76" width="34" height="18" fill="#9a9890"/></svg>
+        <span class="thmtext"><strong>Dim</strong><span>The plain layout, turned right down.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="2">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#f0eee6"/><rect x="8" y="10" width="48" height="2" fill="#3d3929"/><rect x="8" y="18" width="30" height="12" fill="#3d3929"/><rect x="8" y="36" width="48" height="1" fill="#e6d6ce"/><rect x="8" y="42" width="22" height="8" fill="#6b6759"/><rect x="8" y="56" width="48" height="1" fill="#e6d6ce"/><rect x="15" y="65" width="34" height="20" fill="none" stroke="#a82a2a" stroke-width="2"/></svg>
+        <span class="thmtext"><strong>Paper</strong><span>Ruled like a printed statement.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="3">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0a0a0a"/><rect x="8" y="14" width="48" height="1" fill="#6a6a68"/><rect x="8" y="24" width="38" height="30" fill="#e8e8e4"/><rect x="8" y="62" width="30" height="3" fill="#e8e8e4"/><rect x="38" y="62" width="18" height="3" fill="#2a2a29"/></svg>
+        <span class="thmtext"><strong>Mono</strong><span>One figure, nothing else on the glass.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="4">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#2e3440"/><rect x="8" y="10" width="22" height="4" fill="#7b8494"/><rect x="8" y="20" width="34" height="22" fill="#eceff4"/><rect x="8" y="50" width="48" height="6" fill="#3b4252" rx="3"/><rect x="8" y="50" width="30" height="6" fill="#88c0d0" rx="3"/><rect x="8" y="66" width="22" height="4" fill="#7b8494"/><rect x="8" y="76" width="34" height="18" fill="#eceff4"/></svg>
+        <span class="thmtext"><strong>Nord</strong><span>The plain layout in cool slate.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="5">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#1a1b26"/><rect x="8" y="10" width="22" height="4" fill="#565f89"/><rect x="8" y="20" width="34" height="22" fill="#c0caf5"/><rect x="8" y="50" width="48" height="6" fill="#292e42" rx="3"/><rect x="8" y="50" width="30" height="6" fill="#7aa2f7" rx="3"/><rect x="8" y="66" width="22" height="4" fill="#565f89"/><rect x="8" y="76" width="34" height="18" fill="#c0caf5"/></svg>
+        <span class="thmtext"><strong>Tokyo Night</strong><span>The plain layout in deep indigo.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="6">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#050806"/><rect x="8" y="26" width="9" height="2" fill="#5ee08a"/><rect x="8" y="26" width="2" height="9" fill="#5ee08a"/><rect x="47" y="26" width="9" height="2" fill="#5ee08a"/><rect x="54" y="26" width="2" height="9" fill="#5ee08a"/><rect x="8" y="62" width="9" height="2" fill="#5ee08a"/><rect x="8" y="55" width="2" height="9" fill="#5ee08a"/><rect x="47" y="62" width="9" height="2" fill="#5ee08a"/><rect x="54" y="55" width="2" height="9" fill="#5ee08a"/><rect x="18" y="38" width="28" height="14" fill="#5ee08a"/><rect x="8" y="80" width="6" height="8" fill="#5ee08a"/><rect x="16" y="80" width="6" height="8" fill="#5ee08a"/><rect x="24" y="80" width="6" height="8" fill="#5ee08a"/><rect x="32" y="80" width="6" height="8" fill="#5ee08a"/><rect x="40" y="80" width="6" height="8" fill="#12301c"/><rect x="48" y="80" width="6" height="8" fill="#12301c"/></svg>
+        <span class="thmtext"><strong>Tactical</strong><span>Corner brackets and a segmented gauge.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="7">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0d0a04"/><rect x="8" y="10" width="40" height="3" fill="#7a5510"/><rect x="8" y="18" width="32" height="3" fill="#7a5510"/><rect x="8" y="26" width="24" height="3" fill="#7a5510"/><rect x="8" y="42" width="34" height="16" fill="#ffb000"/><rect x="8" y="66" width="44" height="3" fill="#7a5510"/><rect x="8" y="74" width="44" height="3" fill="#7a5510"/><rect x="8" y="82" width="44" height="3" fill="#7a5510"/><rect x="8" y="90" width="5" height="7" fill="#ffb000"/></svg>
+        <span class="thmtext"><strong>Amber CRT</strong><span>Terminal lines under a cursor.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="8">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0b1114"/><rect x="8" y="14" width="20" height="62" fill="#143038"/><rect x="8" y="44" width="20" height="32" fill="#5ec8e0"/><rect x="36" y="14" width="20" height="62" fill="#143038"/><rect x="36" y="58" width="20" height="18" fill="#5ec8e0"/><rect x="8" y="84" width="16" height="8" fill="#e6f4f7"/><rect x="36" y="84" width="16" height="8" fill="#e6f4f7"/></svg>
+        <span class="thmtext"><strong>Ice</strong><span>Columns that fill from the bottom.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="9">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#1c1318"/><rect x="8" y="16" width="48" height="34" fill="#3d2430" rx="12"/><rect x="20" y="26" width="24" height="14" fill="#fdeef4" rx="4"/><rect x="8" y="60" width="48" height="8" fill="#3d2430" rx="4"/><rect x="8" y="60" width="28" height="8" fill="#f2a6c0" rx="4"/><circle cx="22" cy="76" r="2" fill="#8c6b78"/><circle cx="42" cy="76" r="2" fill="#8c6b78"/></svg>
+        <span class="thmtext"><strong>Sakura</strong><span>Rounded panel with a soft track.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="10">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0e0a16"/><rect x="-6" y="30" width="64" height="5" fill="#33143a"/><rect x="-3" y="35" width="64" height="5" fill="#33143a"/><rect x="0" y="40" width="64" height="5" fill="#33143a"/><rect x="3" y="45" width="64" height="5" fill="#33143a"/><rect x="6" y="50" width="64" height="5" fill="#33143a"/><rect x="14" y="38" width="28" height="18" fill="#ff2b5e"/><rect x="10" y="34" width="28" height="18" fill="#ff4fd8"/><rect x="8" y="70" width="48" height="2" fill="#eae2ff"/></svg>
+        <span class="thmtext"><strong>Neon Noir</strong><span>Slanted bands behind offset type.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="11">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#0a1428"/><rect x="8" y="18" width="1" height="44" fill="#4f7099"/><rect x="40" y="18" width="1" height="44" fill="#7fb2ff"/><rect x="55" y="18" width="1" height="44" fill="#4f7099"/><rect x="8" y="38" width="32" height="2" fill="#7fb2ff"/><rect x="41" y="38" width="14" height="2" fill="#14294a"/><rect x="8" y="70" width="26" height="12" fill="#dceaff"/></svg>
+        <span class="thmtext"><strong>Blueprint</strong><span>Drawn to a scale, with dimension lines.</span></span>
+      </label></li>
+      <li class="thmcard"><label>
+        <input type="radio" name="wiztheme" value="12">
+        <svg class="thumb" viewBox="0 0 64 104" aria-hidden="true"><rect width="64" height="104" rx="5" fill="#9bbc0f"/><rect x="7" y="9" width="50" height="16" fill="none" stroke="#0f380f" stroke-width="2"/><rect x="8" y="34" width="6" height="10" fill="#0f380f"/><rect x="16" y="34" width="6" height="10" fill="#0f380f"/><rect x="24" y="34" width="6" height="10" fill="#0f380f"/><rect x="32" y="34" width="6" height="10" fill="#0f380f"/><rect x="40" y="34" width="6" height="10" fill="#8bac0f"/><rect x="48" y="34" width="6" height="10" fill="#8bac0f"/><rect x="7" y="53" width="50" height="36" fill="none" stroke="#0f380f" stroke-width="2"/><rect x="12" y="60" width="30" height="3" fill="#0f380f"/><rect x="12" y="68" width="22" height="3" fill="#306230"/></svg>
+        <span class="thmtext"><strong>Handheld</strong><span>Boxed like a handheld console.</span></span>
+      </label></li>
+    </ul>
+
     <div class="send">
       <label for="boardaddr">Your board's address</label>
       <div class="sendrow">
@@ -903,6 +1011,7 @@
     var addr = document.getElementById('boardaddr');
     var send = document.getElementById('scrsend');
     var count = document.getElementById('scrcount');
+    var thms = document.getElementById('thmlist');
     function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
     function set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
@@ -913,6 +1022,18 @@
     }
     if (get('yoyu-default')) def.value = get('yoyu-default');
     if (get('yoyu-addr')) addr.value = get('yoyu-addr');
+    var savedTheme = get('yoyu-theme');
+    if (savedTheme) {
+      var tr = thms.querySelector('input[value="' + savedTheme + '"]');
+      if (tr) tr.checked = true;
+    }
+
+    // Index, not name: the board stores the number, and the numbers are fixed
+    // for the life of the firmware so a link written today still lands right.
+    function theme() {
+      var t = thms.querySelector('input:checked');
+      return t ? t.value : '0';
+    }
 
     // Without touch the board cannot be tapped along, so the AMOLED wants the
     // screens to change on their own. Only until someone picks for themselves.
@@ -946,7 +1067,8 @@
       send.setAttribute('aria-disabled', ready ? 'false' : 'true');
       send.href = ready
         ? 'http://' + h + '/settings?screens=' + on.join(',') +
-          '&default=' + def.value + '&rotate=' + rot.value + '#screens'
+          '&default=' + def.value + '&rotate=' + rot.value +
+          '&theme=' + theme() + '#screens'
         : '#';
       count.textContent = on.length
         ? on.length + ' of ' + boxes.length + ' on'
@@ -955,10 +1077,12 @@
         set('yoyu-screens', on.join(','));
         set('yoyu-default', def.value);
         set('yoyu-addr', addr.value.trim());
+        set('yoyu-theme', theme());
       }
     }
 
     list.addEventListener('change', function () { refresh(true); });
+    thms.addEventListener('change', function () { refresh(true); });
     def.addEventListener('change', function () { refresh(true); });
     addr.addEventListener('input', function () { refresh(true); });
     rot.addEventListener('change', function () {
