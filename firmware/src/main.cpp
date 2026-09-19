@@ -3841,12 +3841,6 @@ static void applyTz() {
   tzset();
 }
 
-static void saveTheme() {
-  prefs.begin("headroom", false);
-  prefs.putInt("theme", uiTheme);
-  prefs.end();
-}
-
 static void saveCreds() {
   prefs.begin("headroom", false);
   prefs.putString("atok", accessTok);
