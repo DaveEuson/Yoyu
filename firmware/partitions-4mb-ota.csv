@@ -1,0 +1,16 @@
+# 4MB with two OTA slots and no filesystem.
+#
+# The stock default_4MB.csv gives 1.31MB per slot and spends the rest on a
+# SPIFFS partition this firmware never mounts: settings live in NVS. The app
+# passed 1.31MB when the toolchain moved to core 3.x, so the stock table no
+# longer fits. Dropping the filesystem buys nearly 2MB a side.
+#
+# Deliberately sized for 4MB even where the chip has 8MB. Waveshare documents
+# the C6-LCD-1.47 as a 4MB part and ships some with 8MB; a table built for 8
+# would not fit the smaller ones, and one built for 4 merely leaves room unused
+# on the larger.
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x1E0000,
+app1,     app,  ota_1,   0x1F0000, 0x1E0000,

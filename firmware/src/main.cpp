@@ -31,6 +31,7 @@
 #endif
 #include <mbedtls/md.h>
 #include <esp_random.h>
+#include <esp_system.h>
 #include <mbedtls/pk.h>
 #include "ota_pubkey.h"
 
@@ -92,9 +93,13 @@ static Arduino_GFX *gfx =
 static Arduino_DataBus *bus =
     new Arduino_ESP32SPI(LCD_DC, LCD_CS, LCD_SCLK, LCD_MOSI, LCD_MISO);
 // rotation 2 = portrait 240x320 flipped 180° (USB-C connector at the top)
+// The trailing offsets matter on a panel narrower than its controller: the
+// 1.47" board is 172 columns of a 240-column part, starting 34 in. Zero on the
+// boards whose panel fills the controller.
 static Arduino_GFX *gfx =
     new Arduino_ST7789(bus, LCD_RST, PANEL_ROTATION, PANEL_INVERT,
-                       PANEL_W, PANEL_H);
+                       PANEL_W, PANEL_H, PANEL_COL_OFFSET, 0,
+                       PANEL_COL_OFFSET, 0);
 #endif
 // Off-screen framebuffer (PSRAM) for the animated kitsune screen: draw a whole
 // frame into RAM, then blit it in one pass so the animation never flickers.
@@ -179,15 +184,56 @@ static void initLayout() {
 static uint16_t C_BG, C_INK, C_MUTED;
 static uint16_t C_ACC, C_ACC_T, C_WARN, C_WARN_T, C_CRIT, C_CRIT_T;
 
+// Indices are storage: prefs holds the number, so the first six keep their
+// places forever and anything new is appended. A theme is two things now, a
+// palette and a readout -- the layout the primary screen draws itself in.
 enum { THEME_NIGHT = 0, THEME_DIM, THEME_PAPER, THEME_MONO,
-       THEME_NORD, THEME_TOKYO, THEME_COUNT };
+       THEME_NORD, THEME_TOKYO,
+       THEME_TACTICAL, THEME_CRT, THEME_ICE, THEME_SAKURA,
+       THEME_NOIR, THEME_BLUEPRINT, THEME_HANDHELD, THEME_COUNT };
+
+// Which layout each theme draws its readout in. Several share Codec: a
+// palette swap is a theme too, and Nord and Tokyo Night were always that.
+enum { RO_CODEC = 0, RO_TACTICAL, RO_CRT, RO_ICE, RO_PAPER, RO_MONO,
+       RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD };
+static const uint8_t THEME_READOUT[THEME_COUNT] = {
+  RO_CODEC, RO_CODEC, RO_PAPER, RO_MONO, RO_CODEC, RO_CODEC,
+  RO_TACTICAL, RO_CRT, RO_ICE, RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD};
+
+// A light ground needs knocked-out text where a dark one needs ink, and two of
+// these are light. C_KNOCK is whatever reads on a flooded accent field.
+static uint16_t C_KNOCK;
 static const char *const THEME_NAMES[THEME_COUNT] = {
-    "Night", "Dim", "Paper", "Mono", "Nord", "Tokyo Night"};
+    "Night", "Dim", "Paper", "Mono", "Nord", "Tokyo Night",
+    "Tactical", "Amber CRT", "Ice", "Sakura", "Neon Noir", "Blueprint",
+    "Handheld"};
 static int uiTheme = -1;           // -1 = not applied yet
+
+// For the settings page's previews. Same palettes as applyTheme(), written the
+// way a browser needs them: ground, ink, muted, accent, accent track, alarm.
+struct ThemeCss { const char *bg, *ink, *muted, *acc, *accT, *crit; };
+static const ThemeCss THEME_CSS[THEME_COUNT] = {
+  {"#262624","#f5f4ef","#94907e","#d97757","#4a382f","#e05252"},  // Night
+  {"#0a0a0a","#9a9890","#55534b","#8a4c37","#2a2019","#8e3434"},  // Dim
+  {"#f0eee6","#3d3929","#6b6759","#a8442a","#e6d6ce","#a82a2a"},  // Paper
+  {"#0a0a0a","#e8e8e4","#6a6a68","#9a9a96","#2a2a29","#f2f2ee"},  // Mono
+  {"#2e3440","#eceff4","#7b8494","#88c0d0","#3b4252","#bf616a"},  // Nord
+  {"#1a1b26","#c0caf5","#565f89","#7aa2f7","#292e42","#f7768e"},  // Tokyo
+  {"#050806","#5ee08a","#3f7a54","#5ee08a","#12301c","#ff4d4d"},  // Tactical
+  {"#0d0a04","#ffb000","#7a5510","#ffb000","#2e2008","#fff0c0"},  // Amber CRT
+  {"#0b1114","#e6f4f7","#4a7d8c","#5ec8e0","#143038","#ff5c7a"},  // Ice
+  {"#1c1318","#fdeef4","#8c6b78","#f2a6c0","#3d2430","#ff5d8f"},  // Sakura
+  {"#0e0a16","#eae2ff","#7a5f96","#ff4fd8","#33143a","#ff2b5e"},  // Neon Noir
+  {"#0a1428","#dceaff","#4f7099","#7fb2ff","#14294a","#ff7a45"},  // Blueprint
+  {"#9bbc0f","#0f380f","#306230","#0f380f","#8bac0f","#0f380f"}}; // Handheld
 
 static void applyTheme(int t) {
   if (t < 0 || t >= THEME_COUNT) t = THEME_NIGHT;
   uiTheme = t;
+  // What reads on top of a flooded accent field. Dark by default because most
+  // of these grounds are dark and their accents are bright; the light themes
+  // override it below.
+  C_KNOCK = RGB565(0x1B, 0x1A, 0x18);
   switch (t) {
     case THEME_DIM:
       // For an always-on AMOLED, especially after dark. A true-black ground
@@ -212,6 +258,7 @@ static void applyTheme(int t) {
       C_ACC   = RGB565(0xA8, 0x44, 0x2A); C_ACC_T = RGB565(0xE6, 0xD6, 0xCE);
       C_WARN  = RGB565(0x8A, 0x5A, 0x00); C_WARN_T= RGB565(0xEE, 0xE2, 0xC4);
       C_CRIT  = RGB565(0xA8, 0x2A, 0x2A); C_CRIT_T= RGB565(0xF0, 0xD6, 0xD6);
+      C_KNOCK = RGB565(0xF6, 0xE9, 0xE6);
       break;
     case THEME_MONO:
       // No hue at all. The ladder climbs in brightness instead -- dim, brighter,
@@ -247,6 +294,73 @@ static void applyTheme(int t) {
       C_ACC   = RGB565(0x9E, 0xCE, 0x6A); C_ACC_T = RGB565(0x37, 0x42, 0x35);
       C_WARN  = RGB565(0xE0, 0xAF, 0x68); C_WARN_T= RGB565(0x46, 0x3C, 0x35);
       C_CRIT  = RGB565(0xF7, 0x76, 0x8E); C_CRIT_T= RGB565(0x4B, 0x2F, 0x3D);
+      break;
+    case THEME_TACTICAL:
+      // Phosphor green on true black: a night-vision readout. The alarm is the
+      // only warm colour in the palette, which is what makes it carry.
+      C_BG    = RGB565(0x05, 0x08, 0x06); C_INK   = RGB565(0x5E, 0xE0, 0x8A);
+      C_MUTED = RGB565(0x3F, 0x7A, 0x54);
+      C_ACC   = RGB565(0x5E, 0xE0, 0x8A); C_ACC_T = RGB565(0x12, 0x30, 0x1C);
+      C_WARN  = RGB565(0xFF, 0xB0, 0x00); C_WARN_T= RGB565(0x2E, 0x20, 0x08);
+      C_CRIT  = RGB565(0xFF, 0x4D, 0x4D); C_CRIT_T= RGB565(0x2A, 0x06, 0x06);
+      break;
+    case THEME_CRT:
+      // One hue, four brightnesses, like an amber terminal. Nothing here is
+      // colour-coded, so the ladder has to climb in light instead.
+      C_BG    = RGB565(0x0D, 0x0A, 0x04); C_INK   = RGB565(0xFF, 0xB0, 0x00);
+      C_MUTED = RGB565(0x7A, 0x55, 0x10);
+      C_ACC   = RGB565(0xFF, 0xB0, 0x00); C_ACC_T = RGB565(0x2E, 0x20, 0x08);
+      C_WARN  = RGB565(0xFF, 0xD2, 0x4A); C_WARN_T= RGB565(0x3A, 0x2A, 0x08);
+      C_CRIT  = RGB565(0xFF, 0xF0, 0xC0); C_CRIT_T= RGB565(0x4A, 0x3A, 0x10);
+      C_KNOCK = RGB565(0x24, 0x18, 0x00);
+      break;
+    case THEME_ICE:
+      // Cold instrument glass. Cyan is the calmest thing on a panel at a
+      // glance, which buys the amber and the red more distance to land from.
+      C_BG    = RGB565(0x0B, 0x11, 0x14); C_INK   = RGB565(0xE6, 0xF4, 0xF7);
+      C_MUTED = RGB565(0x4A, 0x7D, 0x8C);
+      C_ACC   = RGB565(0x5E, 0xC8, 0xE0); C_ACC_T = RGB565(0x14, 0x30, 0x38);
+      C_WARN  = RGB565(0xFF, 0xC3, 0x4A); C_WARN_T= RGB565(0x3A, 0x2F, 0x10);
+      C_CRIT  = RGB565(0xFF, 0x5C, 0x7A); C_CRIT_T= RGB565(0x2A, 0x0A, 0x12);
+      break;
+    case THEME_SAKURA:
+      // Soft without being weak. The alarm is a hot rose rather than a red, so
+      // it still belongs to the palette when it fires.
+      C_BG    = RGB565(0x1C, 0x13, 0x18); C_INK   = RGB565(0xFD, 0xEE, 0xF4);
+      C_MUTED = RGB565(0x8C, 0x6B, 0x78);
+      C_ACC   = RGB565(0xF2, 0xA6, 0xC0); C_ACC_T = RGB565(0x3D, 0x24, 0x30);
+      C_WARN  = RGB565(0xFF, 0xC4, 0x6B); C_WARN_T= RGB565(0x3A, 0x2E, 0x18);
+      C_CRIT  = RGB565(0xFF, 0x5D, 0x8F); C_CRIT_T= RGB565(0x33, 0x10, 0x1F);
+      C_KNOCK = RGB565(0x33, 0x10, 0x1F);
+      break;
+    case THEME_NOIR:
+      // Magenta and cyan on ink. Two hues pulling against each other, so a
+      // flood of either is unmistakable against the other.
+      C_BG    = RGB565(0x0E, 0x0A, 0x16); C_INK   = RGB565(0xEA, 0xE2, 0xFF);
+      C_MUTED = RGB565(0x7A, 0x5F, 0x96);
+      C_ACC   = RGB565(0xFF, 0x4F, 0xD8); C_ACC_T = RGB565(0x33, 0x14, 0x3A);
+      C_WARN  = RGB565(0xFF, 0xE1, 0x4F); C_WARN_T= RGB565(0x3A, 0x34, 0x10);
+      C_CRIT  = RGB565(0xFF, 0x2B, 0x5E); C_CRIT_T= RGB565(0x2A, 0x05, 0x12);
+      C_KNOCK = RGB565(0x2A, 0x05, 0x12);
+      break;
+    case THEME_BLUEPRINT:
+      // Drafting cyan on navy. Reads as a measurement being checked, which is
+      // what the readout draws it as.
+      C_BG    = RGB565(0x0A, 0x14, 0x28); C_INK   = RGB565(0xDC, 0xEA, 0xFF);
+      C_MUTED = RGB565(0x4F, 0x70, 0x99);
+      C_ACC   = RGB565(0x7F, 0xB2, 0xFF); C_ACC_T = RGB565(0x14, 0x29, 0x4A);
+      C_WARN  = RGB565(0xFF, 0xD2, 0x7F); C_WARN_T= RGB565(0x3A, 0x2F, 0x14);
+      C_CRIT  = RGB565(0xFF, 0x7A, 0x45); C_CRIT_T= RGB565(0x2A, 0x10, 0x05);
+      break;
+    case THEME_HANDHELD:
+      // Four greens and nothing else, the 1989 pocket LCD. The only palette
+      // here with a light ground, so ink and knockout swap over.
+      C_BG    = RGB565(0x9B, 0xBC, 0x0F); C_INK   = RGB565(0x0F, 0x38, 0x0F);
+      C_MUTED = RGB565(0x30, 0x62, 0x30);
+      C_ACC   = RGB565(0x0F, 0x38, 0x0F); C_ACC_T = RGB565(0x8B, 0xAC, 0x0F);
+      C_WARN  = RGB565(0x30, 0x62, 0x30); C_WARN_T= RGB565(0x8B, 0xAC, 0x0F);
+      C_CRIT  = RGB565(0x0F, 0x38, 0x0F); C_CRIT_T= RGB565(0x8B, 0xAC, 0x0F);
+      C_KNOCK = RGB565(0x9B, 0xBC, 0x0F);
       break;
     default:                                  // THEME_NIGHT -- the original
       C_BG    = RGB565(0x26, 0x26, 0x24); C_INK   = RGB565(0xF5, 0xF4, 0xEF);
@@ -369,6 +483,35 @@ static char plan[16] = "";
 static unsigned long lastPushMs = 0;   // millis() of last accepted push
 static bool timeSynced = false;
 
+// Why the board last started. A silent reboot restores whatever NVS last
+// committed, which can be an older set of settings than the one you just
+// saved -- and with nothing recording the restart, that looks like the board
+// quietly undoing your changes rather than like a crash. A brownout is the
+// one to watch for on the AMOLED, whose panel draws hardest exactly when it
+// redraws.
+static esp_reset_reason_t bootReason = ESP_RST_UNKNOWN;
+
+static const char *resetReasonName() {
+  switch (bootReason) {
+    case ESP_RST_POWERON:   return "power-on";
+    case ESP_RST_EXT:       return "reset pin";
+    case ESP_RST_SW:        return "software";     // our own ESP.restart()
+    case ESP_RST_PANIC:     return "crash";
+    case ESP_RST_INT_WDT:   return "interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "task watchdog";
+    case ESP_RST_WDT:       return "watchdog";
+    case ESP_RST_DEEPSLEEP: return "deep sleep";
+    case ESP_RST_BROWNOUT:  return "brownout";
+    case ESP_RST_SDIO:      return "sdio";
+    case ESP_RST_USB:       return "usb";        // esptool toggling the port
+    case ESP_RST_JTAG:      return "jtag";
+    case ESP_RST_EFUSE:     return "efuse error";
+    case ESP_RST_PWR_GLITCH: return "power glitch";
+    case ESP_RST_CPU_LOCKUP: return "cpu lockup";
+    default:                return "unknown";
+  }
+}
+
 static Preferences prefs;
 static WebServer *server = nullptr;
 static DNSServer dns;
@@ -485,14 +628,14 @@ static bool      nightDim    = true;  // ease the backlight down overnight
 static const uint8_t NIGHT_LEVEL = 40;
 static int       uiScreen    = 0;     // 0 meters 1 focus 2 history 3 kitsune
                                       // 4 timer 5 actions 6 projects 7 settings
-                                      // 8 pace
-static const int UI_SCREENS  = 9;
+                                      // 8 pace 9 micro
+static const int UI_SCREENS  = 10;
 // An index is where a screen is stored, not where it sits in the rotation.
 // defaultScreen and every migration flag below were saved by index, so a new
 // screen is appended rather than inserted, and SCREEN_ORDER says where it goes.
 static const char *SCREEN_NAMES[UI_SCREENS] =
     {"Meters", "Focus", "History", "Yoyu",
-     "Timer", "Actions", "Projects", "Settings", "Pace"};
+     "Timer", "Actions", "Projects", "Settings", "Pace", "Micro"};
 // One line each, shown under the checkboxes on the settings page. The setup
 // wizard (docs/index.html) carries the same sentences: change one, change both.
 static const char *SCREEN_DESC[UI_SCREENS] = {
@@ -504,10 +647,11 @@ static const char *SCREEN_DESC[UI_SCREENS] = {
   "Shortcut buttons for Claude Code. Needs the companion with --actions.",
   "Which projects used the most of your session. Needs the companion.",
   "The board's own address, and which screens are in the rotation.",
-  "Whether you will run out before each window resets, at your current pace."};
-// Pace sits with the other usage screens rather than after Settings.
-static const uint8_t SCREEN_ORDER[UI_SCREENS] = {0, 1, 8, 2, 3, 4, 5, 6, 7};
-static uint16_t  screenMask  = 0x1FF; // bit i set = screen i is in the rotation
+  "Whether you will run out before each window resets, at your current pace.",
+  "The windows that matter, big, drawn in your theme's own layout."};
+// Pace and Micro sit with the other usage screens rather than after Settings.
+static const uint8_t SCREEN_ORDER[UI_SCREENS] = {0, 9, 1, 8, 2, 3, 4, 5, 6, 7};
+static uint16_t  screenMask  = 0x3FF; // bit i set = screen i is in the rotation
 // Persisted as "smask16". The original "smask" was one byte, which is why a
 // ninth screen needed a wider type and a migration rather than just a bigger
 // UI_SCREENS. The old key is still written, low byte only, so a board rolled
@@ -518,6 +662,12 @@ static const int SCREEN_ACTIONS  = 5;
 static const int SCREEN_PROJECTS = 6;
 static const int SCREEN_SETTINGS = 7;
 static const int SCREEN_PACE     = 8;
+static const int SCREEN_MICRO    = 9;
+
+// Quarter turns on top of the orientation the board ships in. Sideways is a
+// real choice rather than a fix: a 172x320 panel on its side is 320x172, which
+// suits two wide bars far better than it suits nine stacked screens.
+static int uiRotate = 0;
 
 // ---- Actions: the board as an input device -------------------------------
 // The Actions screen queues a shortcut; the companion polls /api/actions and
@@ -633,16 +783,34 @@ static bool nightNow() {
 // the other panel for months.
 static bool displayReady = false;
 
+static void updateStatusLed();      // defined once headline usage is available
+
+// Turn the panel and rebuild every layout constant behind it. initLayout()
+// reads gfx->width()/height(), so it has to run again: on a quarter turn those
+// swap, and with them the design-space scale and the letterbox offsets.
+static void applyRotation() {
+  gfx->setRotation((PANEL_ROTATION + uiRotate) & 3);
+  initLayout();
+  // The kitsune's off-screen buffer was allocated at the old size. Keeping it
+  // would blit a portrait frame onto a landscape panel.
+  if (mascotBuf) { delete mascotBuf; mascotBuf = nullptr; }
+}
+
 static void applyBacklight() {
   uint8_t eff = backlight;
   if (nightDim && nightNow() && eff > NIGHT_LEVEL) eff = NIGHT_LEVEL;
   if (screenOff) eff = 0;
+  // Per-board ceiling. The 1.47" panel is documented as overheating at full
+  // brightness, and the damage it leaves is permanent, so its limit belongs in
+  // the firmware rather than in a warning. 255 everywhere else.
+  if (eff > BACKLIGHT_MAX) eff = BACKLIGHT_MAX;
 #if PANEL_HAS_BACKLIGHT
   ledcWrite(LCD_BL, eff);
 #else
   if (!displayReady) return;         // the bus that carries it isn't up yet
   static_cast<Arduino_CO5300 *>(gfx)->setBrightness(eff);
 #endif
+  updateStatusLed();                 // the LED follows the screen into the dark
 }
 
 static void setBacklight(uint8_t v) {
@@ -1284,6 +1452,521 @@ static void drawFocus() {
 
 // Headline metric to trend: the session window if present, else the fullest.
 // Float version (for exact trend detection) and a rounded one (for display).
+// Meters with everything that is not a meter taken away: no clock, no plan
+// name, no reset countdown. The header those things occupy is a third of the
+// screen, and on a 1.47" panel that third is the difference between a bar you
+// can read from the doorway and one you have to walk up to. Bigger type, taller
+// bars, nothing else.
+// Largest whole text size whose string fits `maxW` across and `maxH` down. The
+// built-in font is 6x8 at size 1 and scales in whole steps, so this is
+// arithmetic rather than measurement. Fitting the height as well as the width
+// is the whole point: a number sized to look right on a 320px panel runs over
+// everything under it when the same layout lands on one 172px tall.
+static uint8_t fitBox(const char *t, int maxW, int maxH, int want) {
+  if (want < 1) want = 1;
+  int len = (int)strlen(t);
+  if (len < 1) len = 1;
+  while (want > 1 && (len * 6 * want > maxW || 8 * want > maxH)) want--;
+  return (uint8_t)want;
+}
+
+// The three numbers every readout below is built from. A readout may land on
+// a panel 172, 240, 320 or 480 pixels tall, in either orientation, so nothing
+// in them is written as a pixel offset from the top.
+static int roPad()  { int p = scrW / 20; return p < 6 ? 6 : p; }
+static int roLine() { int l = scrH / 14; return l < 11 ? 11 : l; }
+// Caption size. Size 1 is 8px, which is right on a 172px panel and lost on a
+// 480px one.
+static uint8_t roCap() { return scrH >= 360 ? 2 : 1; }
+
+// ---- Readouts -------------------------------------------------------------
+//
+// A theme is a palette and a readout. The palette recolours every screen; the
+// readout changes how this one screen is laid out, because a colour swap alone
+// never made the panel feel like anything. Each of these draws in real pixels
+// rather than the 240x320 design space, so they hold their shape on a narrow
+// panel and on a sideways one.
+//
+// All of them answer the same three questions in the same order: which window,
+// how much is left, and how long until it comes back. Only the world changes.
+
+// Painted in raw panel pixels. drawLeft and drawCentered map through the
+// design space, which is the thing these layouts are deliberately not doing.
+static void roText(const char *t, int x, int y, uint8_t sz, uint16_t col) {
+  gfx->setTextSize(sz);
+  gfx->setTextColor(col);
+  gfx->setCursor(x, y);
+  gfx->print(t);
+}
+
+static void roRight(const char *t, int right, int y, uint8_t sz, uint16_t col) {
+  roText(t, right - (int)strlen(t) * 6 * sz, y, sz, col);
+}
+
+// Alternates about once a second while something is critical, so a flooded
+// field can breathe. Nothing else on the board animates unless the kitsune is
+// up, and a still red screen is easy to stop seeing.
+static bool pulseOn = false;
+
+struct RowInfo {
+  const Window *w;
+  float left;
+  uint16_t fill, track;
+  bool warn, crit;
+  char pct[8];      // "63%"
+  char when[16];    // "2h 14m"
+};
+
+static int readoutRows(RowInfo *out, int max) {
+  int n = 0;
+  for (int i = 0; i < nWindows && n < max; i++) {
+    RowInfo &r = out[n];
+    r.w = &windows[i];
+    r.left = 100.0f - windows[i].utilization;
+    if (r.left < 0) r.left = 0;
+    if (r.left > 100) r.left = 100;
+    r.crit = r.left <= 10;
+    r.warn = !r.crit && r.left <= 30;
+    r.fill  = r.crit ? C_CRIT   : r.warn ? C_WARN   : C_ACC;
+    r.track = r.crit ? C_CRIT_T : r.warn ? C_WARN_T : C_ACC_T;
+    int val = showUsed ? (int)(windows[i].utilization + 0.5f)
+                       : (int)(r.left + 0.5f);
+    snprintf(r.pct, sizeof(r.pct), "%d%%", val);
+    long mins = 0;
+    time_t now = time(nullptr);
+    if (windows[i].resets_at && timeSynced && now > 100000)
+      mins = (long)((windows[i].resets_at - now) / 60);
+    if (mins < 0) mins = 0;
+    fmtSpan(mins, r.when, sizeof(r.when));
+    n++;
+  }
+  return n;
+}
+
+static bool readoutCritical(const RowInfo *r, int n) {
+  for (int i = 0; i < n; i++)
+    if (r[i].crit) return true;
+  return false;
+}
+
+// ---- Codec: the default. One hero number per row, thin bar, flood on red ---
+static void roCodec(RowInfo *r, int n) {
+  int rowH = scrH / n, pad = roPad();
+  int innerW = scrW - 2 * pad;
+  // Four bands down the row, each a share of it, so the number can never grow
+  // into the bar under it.
+  int lblH = rowH * 2 / 10, numH = rowH * 4 / 10;
+  int barH = rowH / 10;
+  if (barH < 4) barH = 4;
+  for (int i = 0; i < n; i++) {
+    int top = i * rowH;
+    bool flood = r[i].crit && pulseOn;
+    if (r[i].crit) gfx->fillRect(0, top, scrW, rowH, flood ? C_CRIT : C_CRIT_T);
+    uint16_t ink = r[i].crit ? (flood ? C_KNOCK : C_CRIT) : C_INK;
+    uint16_t lbl = r[i].crit ? ink : C_MUTED;
+    int y = top + rowH / 20;
+    roText(r[i].w->label, pad, y,
+           fitBox(r[i].w->label, innerW, lblH, lblH / 8), lbl);
+    y += lblH;
+    roText(r[i].pct, pad, y, fitBox(r[i].pct, innerW, numH, numH / 8), ink);
+    y += numH;
+    if (!r[i].crit) {
+      gfx->fillRoundRect(pad, y, innerW, barH, barH / 2, r[i].track);
+      int wpx = (int)(innerW * r[i].left / 100.0f);
+      if (wpx > 0) gfx->fillRoundRect(pad, y, wpx, barH, barH / 2, r[i].fill);
+    }
+    y += barH + rowH / 20;
+    roText(r[i].when, pad, y, 1, lbl);
+  }
+}
+
+// ---- Tactical: a reticle. Corner brackets, ammunition cells ---------------
+static void roTactical(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  bool flood = a.crit && pulseOn;
+  uint16_t hue = a.crit ? C_CRIT : a.warn ? C_WARN : C_ACC;
+  char hdr[28];
+  snprintf(hdr, sizeof(hdr), a.crit ? "[ ! %s ! ]" : "[ %s ]", a.w->label);
+  roText(hdr, pad, lh / 2, roCap(), a.crit && !flood ? C_MUTED : hue);
+
+  // Brackets, drawn as four corners of a frame that is never closed.
+  int bx = pad, by = scrH * 3 / 16, bw = scrW - 2 * pad, bh = scrH * 7 / 16;
+  int arm = bw / 6, th = 3;
+  for (int c = 0; c < 4; c++) {
+    int x = (c & 1) ? bx + bw - arm : bx;
+    int y = (c & 2) ? by + bh - th : by;
+    gfx->fillRect(x, y, arm, th, hue);
+    int vx = (c & 1) ? bx + bw - th : bx;
+    int vy = (c & 2) ? by + bh - arm : by;
+    gfx->fillRect(vx, vy, th, arm, hue);
+  }
+  uint8_t sz = fitBox(a.pct, bw - 2 * pad, bh - 2 * th - 4, bh / 8);
+  if (sz < 2) sz = 2;
+  roText(a.pct, bx + (bw - (int)strlen(a.pct) * 6 * sz) / 2,
+         by + (bh - 8 * sz) / 2, sz, hue);
+
+  int y = by + bh + lh / 2;
+  roText(a.crit ? "RESERVE CRITICAL" : "REMAINING", pad, y, roCap(),
+         a.crit ? C_CRIT : C_MUTED);
+  y += lh;
+  // Ten cells: discrete beats continuous here, and a stub bar said nothing.
+  int cells = 10, cw = (scrW - 2 * pad) / cells, ch = lh;
+  int lit = (int)((a.left + 5) / 10);
+  for (int c = 0; c < cells; c++)
+    gfx->fillRect(pad + c * cw, y, cw - 3, ch,
+                  c < lit ? hue : (flood ? C_CRIT_T : C_ACC_T));
+  y += ch + lh / 3;
+  char line[32];
+  snprintf(line, sizeof(line), "RESET %s", a.when);
+  roText(line, pad, y, roCap(), C_MUTED);
+  if (n > 1) {
+    y += lh;
+    snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
+    roText(line, pad, y, roCap(), C_MUTED);
+  }
+}
+
+// ---- Amber CRT: a terminal printing status lines --------------------------
+static void roCrt(RowInfo *r, int n) {
+  bool crit = readoutCritical(r, n);
+  bool inv = crit && pulseOn;
+  uint16_t bg = inv ? C_INK : C_BG, fg = inv ? C_KNOCK : C_INK;
+  uint16_t dim = inv ? C_KNOCK : C_MUTED;
+  if (inv) gfx->fillRect(0, 0, scrW, scrH, bg);
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  char line[44];
+  int y = lh / 2;
+  snprintf(line, sizeof(line), "YOYU SYS v%s", FW_VERSION);
+  roText(line, pad, y, cap, dim); y += lh;
+  roText("--------------------", pad, y, cap, dim); y += lh;
+  int bannerH = lh * 3 / 2;
+  if (crit) {
+    roText("*** LOW RESERVE ***", pad, y,
+           fitBox("*** LOW RESERVE ***", scrW - 2 * pad, bannerH, 2), fg);
+  } else {
+    snprintf(line, sizeof(line), "> %s", r[0].w->label);
+    roText(line, pad, y, fitBox(line, scrW - 2 * pad, bannerH, 2), fg);
+  }
+  y += bannerH;
+  // The hero takes whatever the fixed lines below it leave.
+  int tail = lh * (3 + (n - 1));
+  int heroH = scrH - y - tail - lh / 2;
+  if (heroH < 16) heroH = 16;
+  uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 12);
+  roText(r[0].pct, pad, y + (heroH - 8 * sz) / 2, sz, fg);
+  y += heroH;
+  snprintf(line, sizeof(line), "> RESET IN %s", r[0].when);
+  roText(line, pad, y, cap, dim); y += lh;
+  for (int i = 1; i < n; i++) {
+    snprintf(line, sizeof(line), "> %-8s %s", r[i].w->label, r[i].pct);
+    roText(line, pad, y, cap, dim); y += lh;
+  }
+  roText("--------------------", pad, y, cap, dim); y += lh;
+  // The cursor rides the status line rather than taking one of its own, which
+  // is both more terminal-like and one line the short panels do not have.
+  snprintf(line, sizeof(line), "%s%s", crit ? "> STATUS CRITICAL" : "> STATUS OK",
+           pulseOn ? " _" : "");
+  roText(line, pad, y, cap, fg);
+}
+
+// ---- Ice: laboratory columns, filling bottom-up ---------------------------
+static void roIce(RowInfo *r, int n) {
+  if (n > 2) n = 2;
+  int pad = roPad(), lh = roLine(), gap = pad;
+  int colW = (scrW - 2 * pad - (n - 1) * gap) / n;
+  int top = scrH / 5, numH = scrH / 5;
+  int colH = scrH - top - numH - lh * 2;
+  if (readoutCritical(r, n) && pulseOn) {
+    for (int b = 0; b < 4; b++)
+      gfx->drawRect(b, b, scrW - 2 * b, scrH - 2 * b, C_CRIT);
+  }
+  for (int i = 0; i < n; i++) {
+    int x = pad + i * (colW + gap);
+    roText(r[i].w->label, x, lh / 2, roCap(), r[i].crit ? C_CRIT : C_MUTED);
+    gfx->fillRect(x, top, colW, colH, r[i].track);
+    int h = (int)(colH * r[i].left / 100.0f);
+    if (h < 3 && r[i].left > 0) h = 3;
+    gfx->fillRect(x, top + colH - h, colW, h, r[i].fill);
+    // Quarter marks to read the column against, outside it so they survive.
+    for (int q = 1; q < 4; q++) {
+      int ty = top + colH - colH * q / 4;
+      gfx->fillRect(x + colW + 2, ty, q == 2 ? 8 : 5, 2, C_MUTED);
+    }
+    int y = top + colH + lh / 3;
+    roText(r[i].pct, x, y, fitBox(r[i].pct, colW, numH, numH / 8),
+           r[i].crit ? C_CRIT : C_INK);
+    roText(r[i].when, x, y + numH, roCap(), C_MUTED);
+  }
+}
+
+// ---- Paper: a printed docket ----------------------------------------------
+static void roPaper(RowInfo *r, int n) {
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  roText("YOYU . USAGE DOCKET", pad, lh / 2, cap, C_MUTED);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 2, C_INK);
+  int y = lh * 2;
+  int footH = lh * 2;                        // the RESETS line and its rule
+  int body = scrH - y - footH;
+  // The first window is the one being read; the rest are a reference.
+  int h0 = n > 1 ? body * 3 / 5 : body;
+  for (int i = 0; i < n; i++) {
+    int rh = i == 0 ? h0 : (body - h0) / (n - 1);
+    char lead[32];
+    snprintf(lead, sizeof(lead), "%s ............", r[i].w->label);
+    lead[18] = 0;
+    roText(lead, pad, y, cap, C_MUTED);
+    int nh = rh - lh - lh / 3;
+    roText(r[i].pct, pad, y + lh,
+           fitBox(r[i].pct, scrW - 2 * pad, nh, nh / 8),
+           r[i].crit ? C_CRIT : C_INK);
+    y += rh;
+    gfx->fillRect(pad, y - lh / 3, scrW - 2 * pad, 1, C_ACC_T);
+  }
+  if (readoutCritical(r, n)) {
+    // The stamp. A real one would sit at an angle; the display cannot rotate a
+    // filled box, so it lands square and leans on weight instead.
+    int bw = scrW - 4 * pad, bh = lh * 3, bx = 2 * pad;
+    int by = lh * 2 + body / 2 - bh / 2;
+    uint16_t c = pulseOn ? C_CRIT : C_CRIT_T;
+    for (int b = 0; b < 4; b++)
+      gfx->drawRect(bx + b, by + b, bw - 2 * b, bh - 2 * b, c);
+    uint8_t sz = fitBox("SPENT", bw - 16, bh - 12, 5);
+    roText("SPENT", bx + (bw - 5 * 6 * sz) / 2, by + (bh - 8 * sz) / 2, sz, c);
+  }
+  char line[32];
+  snprintf(line, sizeof(line), "RESETS %s", r[0].when);
+  roText(line, pad, scrH - footH + lh / 4, cap, C_MUTED);
+  roText(".....................", pad, scrH - lh, cap, C_ACC_T);
+}
+
+// ---- Mono: Swiss. A hairline, one figure, nothing else --------------------
+static void roMono(RowInfo *r, int n) {
+  bool crit = r[0].crit;
+  bool inv = crit && pulseOn;
+  uint16_t fg = inv ? C_KNOCK : C_INK, dim = inv ? C_KNOCK : C_MUTED;
+  if (inv) gfx->fillRect(0, 0, scrW, scrH, C_CRIT);
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  roText(r[0].w->label, pad, lh / 2, cap, dim);
+  roRight(r[0].when, scrW - pad, lh / 2, cap, dim);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, dim);
+  int y = lh * 2;
+  int tail = n > 1 ? lh * 4 : lh * 2;
+  int heroH = scrH - y - tail;
+  uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 20);
+  // Sat on the baseline of its band rather than centred: the figure is the
+  // only thing on this screen, and it should sit where the eye expects type.
+  roText(r[0].pct, pad, y + heroH - 8 * sz, sz, fg);
+  y += heroH + lh / 3;
+  int w = (int)((scrW - 2 * pad) * r[0].left / 100.0f);
+  gfx->fillRect(pad, y, scrW - 2 * pad, 4, inv ? C_CRIT_T : C_ACC_T);
+  gfx->fillRect(pad, y, w, 4, fg);
+  roText("PER CENT REMAINING", pad, y + lh / 2, cap, dim);
+  if (n > 1) {
+    y += lh * 3 / 2;
+    gfx->fillRect(pad, y, scrW - 2 * pad, 1, inv ? C_CRIT_T : C_ACC_T);
+    roText(r[1].w->label, pad, y + lh / 3, cap, dim);
+    roRight(r[1].pct, scrW - pad, y + lh / 3, cap, fg);
+  }
+}
+
+// ---- Sakura: a capsule holds the number, petals mark the quarters ---------
+static void roSakura(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  bool flood = a.crit && pulseOn;
+  int capX = pad, capW = scrW - 2 * pad;
+  int capY = lh * 3 / 2, capH = scrH * 2 / 5;
+  uint16_t capc = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
+  roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  gfx->fillRoundRect(capX, capY, capW, capH, capH / 4, capc);
+  uint8_t sz = fitBox(a.pct, capW - 2 * pad, capH - lh / 2, capH / 8);
+  if (sz < 2) sz = 2;
+  roText(a.pct, capX + (capW - (int)strlen(a.pct) * 6 * sz) / 2,
+         capY + (capH - 8 * sz) / 2, sz, a.crit ? C_KNOCK : C_INK);
+  int y = capY + capH + lh;
+  if (a.crit) {
+    roText("almost out!", pad, y,
+           fitBox("almost out!", capW, lh * 2, 2), C_CRIT);
+    y += lh * 2;
+  } else {
+    int barH = lh;
+    gfx->fillRoundRect(pad, y, capW, barH, barH / 2, a.track);
+    int w = (int)(capW * a.left / 100.0f);
+    if (w > 0) gfx->fillRoundRect(pad, y, w, barH, barH / 2, a.fill);
+    for (int q = 1; q < 4; q++)          // petals, not ticks
+      gfx->fillCircle(pad + capW * q / 4, y + barH + lh / 2, 3, C_MUTED);
+    y += barH + lh;
+  }
+  char line[32];
+  snprintf(line, sizeof(line), "back in %s", a.when);
+  roText(line, pad, y, cap, C_MUTED);
+  if (n > 1) {
+    y += lh;
+    roText(r[1].w->label, pad, y, cap, C_MUTED);
+    roRight(r[1].pct, scrW - pad, y, cap, C_INK);
+  }
+}
+
+// ---- Neon Noir: a slash of light, the number doubled as its own glow ------
+static void roNoir(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  bool flood = a.crit && pulseOn;
+  // The slash: a stack of offset rows, which is how you draw a diagonal on a
+  // display that cannot rotate anything.
+  int bandTop = a.crit ? lh * 2 : scrH * 5 / 16;
+  int bandH   = a.crit ? scrH / 2 : scrH / 4;
+  uint16_t band = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
+  for (int y = 0; y < bandH; y++)
+    gfx->drawFastHLine(-40 + (y * scrW) / (bandH * 3), bandTop + y, scrW + 40, band);
+  roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  // The number may stand taller than its band -- that overhang is the look --
+  // but not so tall that it reaches the header or the rule under it.
+  uint8_t sz = fitBox(a.pct, scrW - 2 * pad, bandH + lh, 20);
+  if (sz < 2) sz = 2;
+  int ny = bandTop + (bandH - 8 * sz) / 2;
+  if (ny < lh * 2) ny = lh * 2;
+  // Drawn twice, offset: the second pass is the glow, in the other hue.
+  roText(a.pct, pad + 4, ny + 4, sz, a.crit ? C_WARN : C_ACC);
+  roText(a.pct, pad, ny, sz, a.crit ? C_KNOCK : C_INK);
+  int y = bandTop + bandH + lh / 2;
+  if (y < ny + 8 * sz + lh / 2) y = ny + 8 * sz + lh / 2;
+  gfx->fillRect(pad, y, scrW - 2 * pad, 3, C_ACC);
+  y += lh / 2;
+  roText(a.crit ? "OUT SOON" : "PER CENT LEFT", pad, y, cap, C_MUTED);
+  y += lh;
+  char line[32];
+  snprintf(line, sizeof(line), "RESET %s", a.when);
+  roText(line, pad, y, cap, C_MUTED);
+  if (n > 1) {
+    y += lh;
+    roText(r[1].w->label, pad, y, cap, C_MUTED);
+    roRight(r[1].pct, scrW - pad, y, cap, C_INK);
+  }
+}
+
+// ---- Blueprint: headroom drawn as a measured dimension -------------------
+static void roBlueprint(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  char hdr[34];
+  snprintf(hdr, sizeof(hdr), a.crit ? "FIG.1 %s . REVISE" : "FIG.1 %s", a.w->label);
+  roText(hdr, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
+  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, a.crit ? C_CRIT : C_ACC_T);
+
+  int left = pad, right = scrW - pad;
+  int wTop = lh * 2, wH = scrH / 3;
+  int dimY = wTop + wH / 2;
+  int mark = left + (int)((right - left) * a.left / 100.0f);
+  // Witness lines at each end and at the measurement, then the dimension run
+  // between them with arrowheads. This is the whole conceit of the theme.
+  gfx->fillRect(left, wTop, 1, wH, C_MUTED);
+  gfx->fillRect(right, wTop, 1, wH, C_MUTED);
+  gfx->fillRect(mark, wTop, 1, wH, a.crit ? C_CRIT : C_ACC);
+  gfx->fillRect(left, dimY, mark - left, 2, a.crit ? C_CRIT : C_ACC);
+  gfx->fillRect(mark, dimY, right - mark, 2, C_ACC_T);
+  for (int t = 0; t < 5; t++) {        // arrowheads
+    gfx->drawFastVLine(left + t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
+    gfx->drawFastVLine(mark - t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
+  }
+  char cap2[24];
+  snprintf(cap2, sizeof(cap2), "<-- %s -->", a.pct);
+  roText(cap2, left + 6, dimY - lh, cap, a.crit ? C_CRIT : C_ACC);
+
+  int y = wTop + wH + lh / 2;
+  int tail = n > 1 ? lh * 2 : lh;
+  int heroH = scrH - y - tail - lh / 2;
+  if (heroH < 16) heroH = 16;
+  roText(a.pct, pad, y, fitBox(a.pct, scrW - 2 * pad, heroH, 20),
+         a.crit ? C_CRIT : C_INK);
+  y += heroH;
+  char line[36];
+  // The note that used to sit in its own box: a drawing revision reads as a
+  // line on the sheet, and a box needed height these panels do not have.
+  if (a.crit) snprintf(line, sizeof(line), "NOTE: RESET %s", a.when);
+  else        snprintf(line, sizeof(line), "RESET .... %s", a.when);
+  roText(line, pad, y, cap, a.crit ? C_CRIT : C_MUTED);
+  if (n > 1) {
+    y += lh;
+    snprintf(line, sizeof(line), "%s ... %s", r[1].w->label, r[1].pct);
+    roText(line, pad, y, cap, C_MUTED);
+  }
+}
+
+// ---- Handheld: a 1989 pocket game -----------------------------------------
+static void roHandheld(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  int boxW = scrW - 2 * pad, topH = lh * 3;
+  gfx->drawRect(pad, lh / 2, boxW, topH, C_INK);
+  gfx->drawRect(pad + 1, lh / 2 + 1, boxW - 2, topH - 2, C_INK);
+  roText(a.w->label, pad + lh / 2, lh,
+         fitBox(a.w->label, boxW - lh, lh * 3 / 2, lh * 3 / 2 / 8), C_INK);
+  if (a.crit && pulseOn) roText("!! LOW HP !!", pad + lh / 2, lh * 2 + lh / 4, cap, C_INK);
+  else if (!a.crit)      roText("HP", pad + lh / 2, lh * 2 + lh / 4, cap, C_MUTED);
+
+  // The HP bar: ten cells, because a handheld never showed you a percentage
+  // it could show you as hearts.
+  int cells = 10, cw = boxW / cells, ch = lh;
+  int cy = lh / 2 + topH + lh / 2;
+  gfx->drawRect(pad, cy - 4, boxW, ch + 8, C_INK);
+  int lit = (int)((a.left + 5) / 10);
+  for (int c = 0; c < cells; c++) {
+    bool on = c < lit;
+    if (a.crit && c == 0 && !pulseOn) on = false;   // the last heart flashes
+    gfx->fillRect(pad + 4 + c * cw, cy, cw - 3, ch, on ? C_INK : C_ACC_T);
+  }
+
+  int botH = lh * 3 + (n > 1 ? lh : 0);
+  int botY = scrH - botH - lh / 2;
+  int y = cy + ch + lh / 2;
+  int heroH = botY - y - lh / 2;
+  if (heroH < 16) heroH = 16;
+  roText(a.pct, pad + 2, y, fitBox(a.pct, boxW, heroH, 20), C_INK);
+
+  gfx->drawRect(pad, botY, boxW, botH, C_INK);
+  gfx->drawRect(pad + 1, botY + 1, boxW - 2, botH - 2, C_INK);
+  roText(a.crit ? "NEARLY SPENT!" : "PLENTY LEFT.", pad + lh / 2,
+         botY + lh / 2, cap, C_INK);
+  char line[32];
+  snprintf(line, sizeof(line), "REFILLS IN %s.", a.when);
+  roText(line, pad + lh / 2, botY + lh * 3 / 2, cap, C_INK);
+  if (n > 1) {
+    snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
+    roText(line, pad + lh / 2, botY + lh * 5 / 2, cap, C_MUTED);
+  }
+}
+
+static void drawMicro() {
+  gfx->fillScreen(C_BG);
+  if (nWindows == 0) { drawMeters(); return; }   // nothing to draw yet
+
+  RowInfo rows[3];
+  int n = readoutRows(rows, 3);
+  if (n == 0) { drawMeters(); return; }
+
+  switch (THEME_READOUT[uiTheme < 0 ? 0 : uiTheme]) {
+    case RO_TACTICAL:  roTactical(rows, n);  break;
+    case RO_CRT:       roCrt(rows, n);       break;
+    case RO_ICE:       roIce(rows, n);       break;
+    case RO_PAPER:     roPaper(rows, n);     break;
+    case RO_MONO:      roMono(rows, n);      break;
+    case RO_SAKURA:    roSakura(rows, n);    break;
+    case RO_NOIR:      roNoir(rows, n);      break;
+    case RO_BLUEPRINT: roBlueprint(rows, n); break;
+    case RO_HANDHELD:  roHandheld(rows, n);  break;
+    default:           roCodec(rows, n);     break;
+  }
+}
+
 // The Pace screen. One sentence at the top worth reading from across the
 // desk, then a row per window: how much is used, a tick where an even pace
 // would have you by now, and what that pace means for the reset.
@@ -2240,9 +2923,10 @@ static void drawSettings() {
   gfx->drawFastHLine(mapX(14), mapY(106), mapLen(212), C_ACC_T);
   drawLeft("Screens in rotation", 14, 114, 1, C_MUTED);
 
-  // Nine rows at 19px end at 280, clear of the hint line at 304. At the old
-  // 21px the ninth landed on it.
-  int y = 128;
+  // Ten rows at 17px end at 277, clear of the hint line at 304. Every screen
+  // added since has cost this list a pixel of spacing; at 19 the tenth row
+  // drew straight through the hint.
+  int y = 124;
   for (int k = 0; k < UI_SCREENS; k++) {
     int i = SCREEN_ORDER[k];
     bool sel = (k == settingSel);
@@ -2251,7 +2935,7 @@ static void drawSettings() {
                                 mapLen(5), C_ACC_T);
     drawLeft(on ? "[x]" : "[ ]", 16, y, 1, on ? C_ACC : C_MUTED);
     drawLeft(SCREEN_NAMES[i], 46, y, 1, on ? C_INK : C_MUTED);
-    y += 19;
+    y += 17;
   }
 
   // A refusal has to say why, or the tap just looks broken. It fades so the
@@ -2267,6 +2951,33 @@ static bool pairingActive();   // defined with the pairing handlers below
 static void drawPairScreen();
 static void wake();            // defined with the motion handling below
 
+// The onboard WS2812, on the boards that have one. It is a second gauge, and a
+// coarser one: readable across a room, where 172px of text is not. Core 3.x
+// drives a single addressable LED with rgbLedWrite(), so this costs no library.
+//
+// The thresholds are deliberately not the meters' own. The bars turn amber at
+// 30% left; this turns amber at 50, because a light glimpsed from the doorway
+// should say "start thinking about it" earlier than a bar you are reading.
+static void updateStatusLed() {
+#if HAS_RGB_LED
+  static uint32_t lastCol = 0xFFFFFFFFu;
+  uint8_t r = 0, g = 0, b = 0;
+  float used = headlineUtilF();
+  if (!screenOff && used >= 0) {
+    float left = 100.0f - used;
+    if (left <= 10)      { r = 40; g = 0;  b = 0; }   // red
+    else if (left <= 50) { r = 34; g = 18; b = 0; }   // amber
+    else                 { r = 0;  g = 34; b = 0; }   // green
+  }
+  // Low absolute values on purpose: this sits under an acrylic diffuser a foot
+  // from your face, and a WS2812 at full output is a torch.
+  uint32_t col = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+  if (col == lastCol) return;
+  lastCol = col;
+  rgbLedWrite(RGB_LED_PIN, r, g, b);
+#endif
+}
+
 static void drawScreen() {
   // While pairing, the one-time code owns the screen — any full redraw
   // (30s tick, auto-rotate, a tap) must not paint the normal UI over it.
@@ -2279,7 +2990,9 @@ static void drawScreen() {
   else if (uiScreen == SCREEN_PROJECTS) drawProjects();
   else if (uiScreen == SCREEN_SETTINGS) drawSettings();
   else if (uiScreen == SCREEN_PACE)     drawPace();
+  else if (uiScreen == SCREEN_MICRO)    drawMicro();
   else                                  drawMeters();
+  updateStatusLed();
 }
 
 // ---- running out puts the countdown up by itself --------------------------
@@ -2551,6 +3264,11 @@ static void handleStatus() {
   // be done by eye or by scraping /update — neither of which works for a board
   // on a shelf, or for more than one at a time.
   doc["version"] = FW_VERSION;
+  doc["reset_reason"] = resetReasonName();
+  doc["reset_code"] = (int)bootReason;   // so an unmapped reason is still readable
+  // Seconds since that reset. Free, and it is what makes a restart visible
+  // between two polls without having to catch the board while it is down.
+  doc["uptime_s"] = (uint32_t)(millis() / 1000);
   doc["self_hosted"] = selfHosted;
   doc["board"] = BOARD_SLUG;          // which panel this build drives
   // False means this firmware is on the wrong board: it runs, but it cannot
@@ -2962,7 +3680,9 @@ static void improvDispatch() {
       break;
     }
     case improv::C_REQUEST_INFO: {
-      const char *info[4] = {"Yoyu", FW_VERSION, "ESP32-S3", "Yoyu"};
+      // Asked by the browser flasher. Hardcoding the family made the C6
+      // introduce itself as an S3.
+      const char *info[4] = {"Yoyu", FW_VERSION, ESP.getChipModel(), "Yoyu"};
       improvSendResult(improv::C_REQUEST_INFO, info, 4);
       break;
     }
@@ -3033,16 +3753,23 @@ static void loadCreds() {
   nightDim   = prefs.getBool("ndim", true);
   // 0xFFFF cannot be a real mask with nine screens, so it doubles as "never
   // saved" and a board upgrading from the one-byte key falls through to it.
+  // 0 is not a real mask either, since the default screen is always forced on,
+  // so the pair of them tell a fresh install from an upgrade.
   uint16_t m16 = prefs.getUShort("smask16", 0xFFFF);
-  screenMask = (m16 != 0xFFFF) ? m16 : prefs.getUChar("smask", 0x1F);
-  defaultScreen = prefs.getInt("dscr", 0);
+  uint8_t  m8  = prefs.getUChar("smask", 0);
+  bool freshInstall = (m16 == 0xFFFF) && (m8 == 0);
+  screenMask = freshInstall ? DEFAULT_SCREEN_MASK
+                            : (m16 != 0xFFFF ? m16 : (uint16_t)m8);
+  defaultScreen = prefs.getInt("dscr", DEFAULT_SCREEN);
   rotateSecs = prefs.getInt("rots", 0);
+  uiRotate   = prefs.getInt("orient", 0) & 3;
   pushToken  = prefs.getString("ptok", "");
   bool timerMigrated = prefs.getBool("tmrmig", false);
   bool actionsMigrated = prefs.getBool("actmig", false);
   bool projectsMigrated = prefs.getBool("prjmig", false);
   bool settingsMigrated = prefs.getBool("setmig", false);
   bool paceMigrated = prefs.getBool("pacemig", false);
+  bool microMigrated = prefs.getBool("micmig", false);
   prefs.end();
   // Purge a refresh token left by firmware that used to sign itself in. Done
   // here rather than on the next saveCreds() because a board that is never
@@ -3067,8 +3794,22 @@ static void loadCreds() {
   // wear-levelled flash, and doing them separately writes three superseded
   // values of smask before the one that matters. The next new screen is one
   // more line inside the block rather than a fifth copy of it.
-  if (!timerMigrated || !actionsMigrated || !projectsMigrated ||
-      !settingsMigrated || !paceMigrated) {
+  if (freshInstall) {
+    // Nothing to reveal on a board that has never been set up: it starts with
+    // the set its own boards.h asks for. Without this the reveals below would
+    // fire on first boot and switch every screen on, which is wrong on a panel
+    // that only wants two.
+    prefs.begin("headroom", false);
+    prefs.putBool("tmrmig", true);
+    prefs.putBool("actmig", true);
+    prefs.putBool("prjmig", true);
+    prefs.putBool("setmig", true);
+    prefs.putBool("pacemig", true);
+    prefs.putBool("micmig", true);
+    putScreenMask();
+    prefs.end();
+  } else if (!timerMigrated || !actionsMigrated || !projectsMigrated ||
+      !settingsMigrated || !paceMigrated || !microMigrated) {
     prefs.begin("headroom", false);
     if (!timerMigrated) {
       screenMask |= (1 << SCREEN_TIMER);    prefs.putBool("tmrmig", true);
@@ -3085,6 +3826,9 @@ static void loadCreds() {
     // Pace needs nothing to work, so it is shown once like the others.
     if (!paceMigrated) {
       screenMask |= (1 << SCREEN_PACE);     prefs.putBool("pacemig", true);
+    }
+    if (!microMigrated) {
+      screenMask |= (1 << SCREEN_MICRO);    prefs.putBool("micmig", true);
     }
     putScreenMask();
     prefs.end();
@@ -3957,6 +4701,144 @@ static const char *TZ_OPTIONS[][2] = {
 };
 static const int N_TZ = sizeof(TZ_OPTIONS) / sizeof(TZ_OPTIONS[0]);
 
+// One miniature of each readout, drawn with positioned blocks. It is a
+// caricature rather than a rendering: enough of each layout's signature to be
+// recognised at 64px, which is what a picker needs.
+static void themePreview(String &s, int t) {
+  const ThemeCss &c = THEME_CSS[t];
+  s += "<span class=pv style='background:";
+  s += c.bg;
+  s += "'>";
+  // Sized for the longest single snprintf below -- Sakura's six rounded blocks
+  // run past 400 characters. snprintf truncates in silence, and a preview cut
+  // off mid-attribute takes the rest of the page's markup with it.
+  char b[640];
+  switch (THEME_READOUT[t]) {
+    case RO_TACTICAL:
+      for (int i = 0; i < 4; i++) {
+        snprintf(b, sizeof(b), "<i style='left:%dpx;top:%dpx;width:9px;height:2px;"
+                 "background:%s'></i><i style='left:%dpx;top:%dpx;width:2px;"
+                 "height:9px;background:%s'></i>",
+                 (i & 1) ? 47 : 8, (i & 2) ? 62 : 26, c.acc,
+                 (i & 1) ? 54 : 8, (i & 2) ? 55 : 26, c.acc);
+        s += b;
+      }
+      snprintf(b, sizeof(b), "<i style='left:18px;top:38px;width:28px;height:14px;"
+               "background:%s'></i>", c.acc); s += b;
+      for (int i = 0; i < 6; i++) {
+        snprintf(b, sizeof(b), "<i style='left:%dpx;top:80px;width:6px;height:8px;"
+                 "background:%s'></i>", 8 + i * 8, i < 4 ? c.acc : c.accT); s += b;
+      }
+      break;
+    case RO_CRT:
+      for (int i = 0; i < 3; i++) {
+        snprintf(b, sizeof(b), "<i style='left:8px;top:%dpx;width:%dpx;height:3px;"
+                 "background:%s'></i>", 10 + i * 8, 40 - i * 8, c.muted); s += b;
+      }
+      snprintf(b, sizeof(b), "<i style='left:8px;top:42px;width:34px;height:16px;"
+               "background:%s'></i>", c.acc); s += b;
+      for (int i = 0; i < 3; i++) {
+        snprintf(b, sizeof(b), "<i style='left:8px;top:%dpx;width:44px;height:3px;"
+                 "background:%s'></i>", 66 + i * 8, c.muted); s += b;
+      }
+      snprintf(b, sizeof(b), "<i style='left:8px;top:90px;width:5px;height:7px;"
+               "background:%s'></i>", c.acc); s += b;
+      break;
+    case RO_ICE:
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:14px;width:20px;height:62px;background:%s'></i>"
+               "<i style='left:8px;top:44px;width:20px;height:32px;background:%s'></i>"
+               "<i style='left:36px;top:14px;width:20px;height:62px;background:%s'></i>"
+               "<i style='left:36px;top:58px;width:20px;height:18px;background:%s'></i>"
+               "<i style='left:8px;top:84px;width:16px;height:8px;background:%s'></i>"
+               "<i style='left:36px;top:84px;width:16px;height:8px;background:%s'></i>",
+               c.accT, c.acc, c.accT, c.acc, c.ink, c.ink); s += b;
+      break;
+    case RO_PAPER:
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:10px;width:48px;height:2px;background:%s'></i>"
+               "<i style='left:8px;top:18px;width:30px;height:12px;background:%s'></i>"
+               "<i style='left:8px;top:36px;width:48px;height:1px;background:%s'></i>"
+               "<i style='left:8px;top:42px;width:22px;height:8px;background:%s'></i>"
+               "<i style='left:8px;top:56px;width:48px;height:1px;background:%s'></i>"
+               "<i style='left:14px;top:64px;width:36px;height:22px;border:2px solid %s'></i>",
+               c.ink, c.ink, c.accT, c.muted, c.accT, c.crit); s += b;
+      break;
+    case RO_MONO:
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:14px;width:48px;height:1px;background:%s'></i>"
+               "<i style='left:8px;top:24px;width:38px;height:30px;background:%s'></i>"
+               "<i style='left:8px;top:62px;width:30px;height:3px;background:%s'></i>"
+               "<i style='left:38px;top:62px;width:18px;height:3px;background:%s'></i>",
+               c.muted, c.ink, c.ink, c.accT); s += b;
+      break;
+    case RO_SAKURA:
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:16px;width:48px;height:34px;border-radius:12px;"
+               "background:%s'></i>"
+               "<i style='left:20px;top:26px;width:24px;height:14px;border-radius:4px;"
+               "background:%s'></i>"
+               "<i style='left:8px;top:60px;width:48px;height:8px;border-radius:5px;"
+               "background:%s'></i>"
+               "<i style='left:8px;top:60px;width:28px;height:8px;border-radius:5px;"
+               "background:%s'></i>"
+               "<i style='left:20px;top:74px;width:4px;height:4px;border-radius:50%%;"
+               "background:%s'></i>"
+               "<i style='left:40px;top:74px;width:4px;height:4px;border-radius:50%%;"
+               "background:%s'></i>",
+               c.accT, c.ink, c.accT, c.acc, c.muted, c.muted); s += b;
+      break;
+    case RO_NOIR:
+      for (int i = 0; i < 5; i++) {
+        snprintf(b, sizeof(b), "<i style='left:%dpx;top:%dpx;width:64px;height:5px;"
+                 "background:%s'></i>", -6 + i * 3, 30 + i * 5, c.accT); s += b;
+      }
+      snprintf(b, sizeof(b),
+               "<i style='left:14px;top:38px;width:28px;height:18px;background:%s'></i>"
+               "<i style='left:10px;top:34px;width:28px;height:18px;background:%s'></i>"
+               "<i style='left:8px;top:70px;width:48px;height:2px;background:%s'></i>",
+               c.crit, c.acc, c.ink); s += b;
+      break;
+    case RO_BLUEPRINT:
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:18px;width:1px;height:44px;background:%s'></i>"
+               "<i style='left:40px;top:18px;width:1px;height:44px;background:%s'></i>"
+               "<i style='left:55px;top:18px;width:1px;height:44px;background:%s'></i>"
+               "<i style='left:8px;top:38px;width:32px;height:2px;background:%s'></i>"
+               "<i style='left:41px;top:38px;width:14px;height:2px;background:%s'></i>"
+               "<i style='left:8px;top:70px;width:26px;height:12px;background:%s'></i>",
+               c.muted, c.acc, c.muted, c.acc, c.accT, c.ink); s += b;
+      break;
+    case RO_HANDHELD:
+      snprintf(b, sizeof(b),
+               "<i style='left:6px;top:8px;width:52px;height:18px;border:2px solid %s'></i>",
+               c.ink); s += b;
+      for (int i = 0; i < 6; i++) {
+        snprintf(b, sizeof(b), "<i style='left:%dpx;top:34px;width:6px;height:10px;"
+                 "background:%s'></i>", 8 + i * 8, i < 4 ? c.ink : c.accT); s += b;
+      }
+      snprintf(b, sizeof(b),
+               "<i style='left:6px;top:52px;width:52px;height:38px;border:2px solid %s'></i>"
+               "<i style='left:12px;top:60px;width:30px;height:3px;background:%s'></i>"
+               "<i style='left:12px;top:68px;width:22px;height:3px;background:%s'></i>",
+               c.ink, c.ink, c.muted); s += b;
+      break;
+    default:                                   // Codec
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:10px;width:22px;height:4px;background:%s'></i>"
+               "<i style='left:8px;top:20px;width:34px;height:22px;background:%s'></i>"
+               "<i style='left:8px;top:50px;width:48px;height:6px;border-radius:3px;"
+               "background:%s'></i>"
+               "<i style='left:8px;top:50px;width:30px;height:6px;border-radius:3px;"
+               "background:%s'></i>"
+               "<i style='left:8px;top:66px;width:22px;height:4px;background:%s'></i>"
+               "<i style='left:8px;top:76px;width:34px;height:18px;background:%s'></i>",
+               c.muted, c.ink, c.accT, c.acc, c.muted, c.ink); s += b;
+      break;
+  }
+  s += "</span>";
+}
+
 static void handleSettingsPage() {
   // ?screens=meters,pace&default=pace&rotate=20 is how the setup wizard hands
   // over the screens someone picked there. It fills the form in and nothing
@@ -3965,6 +4847,13 @@ static void handleSettingsPage() {
   bool fromSetup = false;
   uint16_t pickMask = screenMask;
   int pickDefault = defaultScreen, pickRotate = rotateSecs;
+  int pickTheme = uiTheme < 0 ? 0 : uiTheme;
+  // ?theme=6 arrives the same way, from the wizard's theme step. It travels on
+  // its own: someone can pick a theme there without touching the screen list.
+  if (server->hasArg("theme")) {
+    int t = server->arg("theme").toInt();
+    if (t >= 0 && t < THEME_COUNT) { pickTheme = t; fromSetup = true; }
+  }
   if (server->hasArg("screens")) {
     String list = server->arg("screens");
     uint16_t m = 0;
@@ -4003,7 +4892,15 @@ static void handleSettingsPage() {
       "select{width:100%;padding:11px;font-size:1rem;border-radius:10px;"
       "border:1px solid rgba(61,57,41,.25);margin:4px 0 12px;box-sizing:border-box;background:#fff}"
       "button{background:#d97757;color:#fff;font-weight:600;font-size:1rem;padding:12px 18px;"
-      "border:none;border-radius:10px}.muted{color:#6b6759;font-size:.85rem}</style>"
+      "border:none;border-radius:10px}.muted{color:#6b6759;font-size:.85rem}"
+      ".themes{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));"
+      "gap:8px;margin:0 0 14px}"
+      ".th{display:flex;flex-direction:column;align-items:center;gap:5px;padding:7px 4px;"
+      "border:1px solid rgba(61,57,41,.18);border-radius:10px;cursor:pointer;font-size:.78rem}"
+      ".th input{margin:0}"
+      ".th:has(input:checked){border-color:#d97757;box-shadow:0 0 0 1px #d97757}"
+      ".pv{position:relative;display:block;width:64px;height:104px;border-radius:3px;"
+      "overflow:hidden}.pv i{position:absolute;display:block}</style>"
       "</head><body><div class=card>"
       "<p style='margin:0 0 10px'><a href='/' style='color:#a8442a;"
       "text-decoration:none;font-weight:600'>&larr; Home</a></p><h2>Settings</h2>"
@@ -4032,12 +4929,12 @@ static void handleSettingsPage() {
   s += F(">Off</option></select>");
   if (fromSetup)
     s += F("<p id=screens style='background:#fbeee8;border-radius:10px;"
-           "padding:10px 12px;margin:6px 0 10px'>Your screen choices from setup "
-           "are filled in below. Press <b>Save</b> at the bottom to keep them.</p>");
+           "padding:10px 12px;margin:6px 0 10px'>Your choices from setup are filled "
+           "in below. Press <b>Save</b> at the bottom to keep them.</p>");
   s += F("<label>Screens to show (tap the display to cycle these)</label>"
          "<div style='margin:4px 0 12px'>");
   // A name alone does not say what a screen is for, which made this list a
-  // guess for anyone who had not already tapped through all nine.
+  // guess for anyone who had not already tapped through them all.
   for (int k = 0; k < UI_SCREENS; k++) {
     int i = SCREEN_ORDER[k];
     s += "<label style='display:block;font-size:1rem;padding:5px 0'>"
@@ -4073,13 +4970,40 @@ static void handleSettingsPage() {
     else { s += "Every "; s += ROT_OPTS[i]; s += "s"; }
     s += "</option>";
   }
-  s += F("</select><label>Theme</label><select name=theme>");
-  for (int i = 0; i < THEME_COUNT; i++) {
+  s += F("</select><label>Orientation</label><select name=orient>");
+  static const char *ORIENTS[4] = {"Upright", "Sideways (clockwise)",
+                                   "Upside down", "Sideways (anticlockwise)"};
+  for (int i = 0; i < 4; i++) {
     s += "<option value="; s += i;
-    if (i == uiTheme) s += " selected";
-    s += ">"; s += THEME_NAMES[i]; s += "</option>";
+    if (i == uiRotate) s += " selected";
+    s += ">"; s += ORIENTS[i]; s += "</option>";
   }
-  s += F("</select><label>Avatar</label><select name=avatar>");
+  s += F("</select>"
+         "<p class=muted style='margin:0 0 12px'>Sideways suits the wide "
+         "screens: Micro fills the glass either way, and the rest are drawn "
+         "for an upright panel and will letterbox.</p>"
+         "<label>Theme</label>"
+         "<p class=muted style='margin:0 0 8px'>A theme is a palette and a "
+         "layout. The readout screen is drawn a different way in each.</p>"
+         "<div class=themes id=theme>");
+  // Radios rather than a dropdown, because the point is seeing them. Each
+  // carries a miniature of the layout it selects.
+  for (int i = 0; i < THEME_COUNT; i++) {
+    s += "<label class=th><input type=radio name=theme value=";
+    s += i;
+    if (i == pickTheme) s += " checked";
+    s += ">";
+    themePreview(s, i);
+    s += "<b>";
+    s += THEME_NAMES[i];
+    s += "</b></label>";
+  }
+  s += F("</div>"
+         "<p class=muted style='margin:-4px 0 14px'>Dim suits an always-on "
+         "AMOLED, where an unlit pixel emits nothing and the accents otherwise "
+         "run at full brightness. Paper is for a bright room, Mono drops "
+         "colour entirely, and Handheld is the only other light one.</p>"
+         "<label>Avatar</label><select name=avatar>");
   for (int i = 0; i < AV_COUNT; i++) {
     s += "<option value="; s += i;
     if (i == uiAvatar) s += " selected";
@@ -4089,9 +5013,6 @@ static void handleSettingsPage() {
     s += " &mdash; "; s += AVATAR_GAUGE[i]; s += "</option>";
   }
   s += F("</select>"
-         "<p class=muted>Dim suits an always-on AMOLED, where an unlit pixel "
-         "emits nothing and the accents otherwise run at full brightness. "
-         "Paper is for a bright room. Mono drops colour entirely.</p>"
          "<label>Push token <span class=muted>(optional)</span></label>"
          "<input type=text name=ptok autocomplete=off placeholder='");
   s += pushToken.length() ? "set - leave blank to keep" : "off - any device on your Wi-Fi can feed the board";
@@ -4160,6 +5081,15 @@ static void handleSettingsSave() {
     prefs.putInt("dscr", defaultScreen);
     prefs.putInt("rots", rotateSecs);
     if (!screenEnabled(uiScreen)) uiScreen = defaultScreen;  // current got turned off
+  }
+  if (server->hasArg("orient")) {
+    int o = server->arg("orient").toInt() & 3;
+    if (o != uiRotate) {
+      uiRotate = o;
+      prefs.putInt("orient", uiRotate);
+      applyRotation();
+      drawScreen();
+    }
   }
   if (server->hasArg("theme")) {
     int t = server->arg("theme").toInt();
@@ -4688,6 +5618,7 @@ static bool i2cPresent(uint8_t addr) {
 // bus being empty. An empty bus can mean a dead touch controller, which one of
 // these boards is already known to have; finding the other board's power
 // management IC on pins this build does not otherwise use is not ambiguous.
+#if HAS_SIBLING_CHECK
 static bool otherBoardSignature() {
   Wire.end();
   Wire.begin(OTHER_I2C_SDA, OTHER_I2C_SCL, 100000);
@@ -4696,8 +5627,16 @@ static bool otherBoardSignature() {
   Wire.begin(I2C_SDA, I2C_SCL, 400000);      // put our own bus back
   return found;
 }
+#endif
 
 static void checkHardwareMatches(int devicesFound) {
+#if !HAS_SIBLING_CHECK
+  // Nothing to compare against. This board carries no I2C devices of its own,
+  // so an empty bus is its normal state rather than evidence of anything, and
+  // there is no sibling whose chip could be found in its place.
+  (void)devicesFound;
+  return;
+#else
   if (devicesFound > 0) return;              // our own bus answered; nothing to do
   if (otherBoardSignature()) {
     hwOk = false;
@@ -4720,6 +5659,7 @@ static void checkHardwareMatches(int devicesFound) {
            "No I2C devices on SDA=%d SCL=%d. If the screen is blank, check "
            "this is " BOARD_SLUG " firmware.", I2C_SDA, I2C_SCL);
   Serial.printf("[hw] %s\n", hwNote);
+#endif
 }
 
 static void sensorsBegin() {
@@ -4813,6 +5753,20 @@ static void bumpBrightness(int d) {
 
 // CST816 gesture codes: 1 up, 2 down, 3 left, 4 right, 5 tap, 0x0B dbl, 0x0C long
 static void dispatchGesture(uint8_t g) {
+  // Turn the swipe to match the picture. The controller reports directions in
+  // panel coordinates, which stop matching what the user sees the moment the
+  // display is rotated: on a sideways board, swiping towards the top of the
+  // image arrives as a swipe towards one side.
+  //
+  // up -> right -> down -> left is one step clockwise, so a quarter turn of
+  // the image is one step round this ring. The sign is the part worth checking
+  // on hardware: if sideways ends up scrolling backwards, subtract uiRotate
+  // here rather than adding it.
+  if (uiRotate) {
+    static const uint8_t RING[4] = {0x01, 0x04, 0x02, 0x03};
+    for (int i = 0; i < 4; i++)
+      if (RING[i] == g) { g = RING[(i + uiRotate) & 3]; break; }
+  }
   lastUserTouch = millis();                 // pause auto-rotate while you interact
   if (screenOff) { wake(); return; }        // a dimmed screen wakes on any touch
 
@@ -5000,6 +5954,7 @@ static void startApi() {
 
 void setup() {
   Serial.begin(115200);
+  bootReason = esp_reset_reason();
   pinMode(BOOT_BTN, INPUT_PULLUP);   // hold 5s -> factory reset Wi-Fi
 #if PANEL_HAS_BACKLIGHT
   // Core 3.x attaches the pin and allocates the LEDC channel itself, and
@@ -5010,6 +5965,13 @@ void setup() {
   applyTheme(DEFAULT_THEME);         // before any drawing; loadCreds may change it
   gfx->begin(40000000);
   displayReady = true;               // brightness may now reach the panel
+  // No wrapping, anywhere. Adafruit_GFX wraps at the screen edge by default,
+  // and getTextBounds measures the *wrapped* box, so drawCentered's shrink
+  // loop was told a 234px string fit a 172px panel and printed it at full
+  // size, splitting it across two lines. With wrapping off the measurement is
+  // honest, the text steps down until it really fits, and anything still too
+  // long clips instead of folding.
+  gfx->setTextWrap(false);
   setBacklight(255);
   initLayout();                      // must precede any drawing
   drawSplash("starting...", nullptr);
@@ -5042,6 +6004,11 @@ void setup() {
 
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   loadCreds();
+  // After loadCreds, not before: that is where the saved orientation is read.
+  // Applying it earlier meant applying a default, so a board set to sideways
+  // came back portrait on every reboot and only looked right until it was
+  // next power-cycled.
+  applyRotation();
   applyTz();          // header-clock timezone (from /settings; countdowns are TZ-free)
   loadHistory();
   readBattery();
@@ -5073,6 +6040,20 @@ void loop() {
     readBattery();
     drawScreen();
   }
+  // A critical readout breathes: flip the flag about once a second and redraw,
+  // but only while that screen is up and something is actually critical. A
+  // still red panel stops being seen after a minute.
+  static unsigned long lastPulse = 0;
+  if (uiScreen == SCREEN_MICRO && !screenOff && !pairingActive() &&
+      millis() - lastPulse >= 900) {
+    lastPulse = millis();
+    bool anyCrit = false;
+    for (int i = 0; i < nWindows; i++)
+      if (windows[i].utilization >= 90.0f) anyCrit = true;
+    if (anyCrit) { pulseOn = !pulseOn; drawScreen(); }
+    else if (pulseOn) { pulseOn = false; drawScreen(); }
+  }
+
   // Timer screen ticks its countdown every second (redraws only the digits).
   static unsigned long lastSec = 0;
   if (uiScreen == SCREEN_TIMER && !screenOff && !pairingActive() && timerResetAt &&
