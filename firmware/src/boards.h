@@ -48,6 +48,11 @@
 #define TOUCH_SCL         47
 #define TOUCH_ADDR        0x15   // CST816D
 #define TOUCH_IS_CST816   1      // 8-bit registers, gestures decoded in hardware
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   1
 #define TOUCH_INT         GFX_NOT_DEFINED
 #define TOUCH_RST         GFX_NOT_DEFINED
 
@@ -126,6 +131,11 @@
 // long presses and swipes are derived from coordinates. Register map from
 // ESPHome's cst9220 component -- Hynitron publish no datasheet.
 #define TOUCH_IS_CST816   0
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   0    // CST9220 answers, never reports a press
 
 // This board has no battery divider on an ADC pin, and looking for one was
 // the wrong question: it carries an AXP2101 power-management chip that already
@@ -204,6 +214,11 @@
 #define TOUCH_ADDR        0x15
 #define TOUCH_IS_CST816   1
 #define TOUCH_INT         GFX_NOT_DEFINED
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   0    // no touch hardware at all
 #define TOUCH_RST         GFX_NOT_DEFINED
 
 // The onboard WS2812, under the acrylic. Core 3.x drives one with

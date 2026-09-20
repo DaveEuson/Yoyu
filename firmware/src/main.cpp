@@ -491,6 +491,14 @@ static bool timeSynced = false;
 // redraws.
 static esp_reset_reason_t bootReason = ESP_RST_UNKNOWN;
 
+// Set by sensorsBegin(), far below, and reported by /api/status, far above it.
+static bool touchOk = false;
+// Every press the controller reported, whether or not it was acted on. A
+// board whose touch is declared dead should sit at zero; anything else is the
+// panel inventing presses, which is indistinguishable from a person changing
+// settings until you can see the count.
+static uint32_t touchEvents = 0;
+
 static const char *resetReasonName() {
   switch (bootReason) {
     case ESP_RST_POWERON:   return "power-on";
@@ -727,6 +735,23 @@ static int       defaultScreen = 0;   // screen shown at power-on
 static int       rotateSecs  = 0;     // 0 = tap-only; else auto-rotate every N s
 static unsigned long lastUserTouch = 0;  // for pausing auto-rotate after a tap
 static bool screenEnabled(int i) { return screenMask & (1 << i); }
+
+// Auto-rotate off means "I will tap it myself". On a board nobody can tap,
+// that is a screen with no way off it -- which is how a board ends up parked
+// on Meters forever with nine other screens it will never show. Pinning a
+// single screen is still allowed, because with one screen there is nowhere to
+// rotate to and the choice is deliberate.
+static const int NO_TOUCH_ROTATE = 20;   // seconds, when 0 is not an option
+static int clampRotate(int secs, uint16_t mask) {
+#if HAS_TOUCH_INPUT
+  (void)mask;
+  return secs;
+#else
+  if (secs != 0) return secs;
+  return __builtin_popcount(mask & ((1 << UI_SCREENS) - 1)) > 1
+             ? NO_TOUCH_ROTATE : 0;
+#endif
+}
 static bool      updateAvailable = false; // a newer release has been seen online
 static char      latestSeen[16]  = "";    // its tag, for the landing/update page
 // Last tag we actually got from GitHub, and when. Lets one user action cost one
@@ -3266,6 +3291,9 @@ static void handleStatus() {
   doc["version"] = FW_VERSION;
   doc["reset_reason"] = resetReasonName();
   doc["reset_code"] = (int)bootReason;   // so an unmapped reason is still readable
+  doc["touch_ok"] = touchOk;             // the chip answered and initialised
+  doc["touch_input"] = (bool)HAS_TOUCH_INPUT;   // ...and presses actually arrive
+  doc["touch_events"] = touchEvents;     // reported presses, acted on or not
   // Seconds since that reset. Free, and it is what makes a restart visible
   // between two polls without having to catch the board while it is down.
   doc["uptime_s"] = (uint32_t)(millis() / 1000);
@@ -3833,6 +3861,9 @@ static void loadCreds() {
     putScreenMask();
     prefs.end();
   }
+  // A board saved as "tap only" before it was known to be untappable -- or
+  // by a build that let it -- would otherwise stay stuck for good.
+  rotateSecs = clampRotate(rotateSecs, screenMask);
   uiScreen = defaultScreen;                 // boot on the chosen screen
 }
 
@@ -4960,10 +4991,18 @@ static void handleSettingsPage() {
     s += ROT_OPTS[i];
     if (ROT_OPTS[i] == pickRotate) s += " selected";
     s += ">";
+#if !HAS_TOUCH_INPUT
+    // Offering "off" on a board with no touch is offering a trap.
+    if (ROT_OPTS[i] == 0) continue;
+#endif
     if (ROT_OPTS[i] == 0) s += "Off (tap only)";
     else { s += "Every "; s += ROT_OPTS[i]; s += "s"; }
     s += "</option>";
   }
+#if !HAS_TOUCH_INPUT
+  s += F("<p class=muted style='margin:-8px 0 12px'>This board has no touch, "
+         "so the screens have to change on their own.</p>");
+#endif
   s += F("</select><label>Orientation</label><select name=orient>");
   static const char *ORIENTS[4] = {"Upright", "Sideways (clockwise)",
                                    "Upside down", "Sideways (anticlockwise)"};
@@ -5070,7 +5109,7 @@ static void handleSettingsSave() {
     int r = server->arg("rots").toInt();
     if (r < 0) r = 0;
     if (r > 3600) r = 3600;
-    rotateSecs = r;
+    rotateSecs = clampRotate(r, screenMask);
     putScreenMask();
     prefs.putInt("dscr", defaultScreen);
     prefs.putInt("rots", rotateSecs);
@@ -5317,7 +5356,6 @@ static const int     I2C_SCL    = TOUCH_SCL;
 static const uint8_t IMU_ADDR_A = 0x6B;   // Waveshare default (SA0 high)
 static const uint8_t IMU_ADDR_B = 0x6A;   // fallback
 static uint8_t imuAddr  = 0;
-static bool    touchOk  = false;
 static bool    imuOk    = false;
 
 static bool i2cRead(uint8_t addr, uint8_t reg, uint8_t *buf, uint8_t n) {
@@ -5747,6 +5785,16 @@ static void bumpBrightness(int d) {
 
 // CST816 gesture codes: 1 up, 2 down, 3 left, 4 right, 5 tap, 0x0B dbl, 0x0C long
 static void dispatchGesture(uint8_t g) {
+  touchEvents++;
+#if !HAS_TOUCH_INPUT
+  // The CST9220 on the AMOLED initialises, answers, and reports presses
+  // nobody made -- which walks the screens and, on the Settings screen,
+  // toggles the rows under the pointer. Counted above so the phantoms show up
+  // in /api/status, then dropped here. Flip HAS_TOUCH_INPUT if a board's
+  // touch is ever made to work.
+  (void)g;
+  return;
+#else
   // Turn the swipe to match the picture. The controller reports directions in
   // panel coordinates, which stop matching what the user sees the moment the
   // display is rotated: on a sideways board, swiping towards the top of the
@@ -5817,6 +5865,7 @@ static void dispatchGesture(uint8_t g) {
     case 0x04: cycleScreen(+1);    break;   // swipe right
     default:   cycleScreen(+1);             // tap -> next screen
   }
+#endif
 }
 
 // Poll the touch controller; dispatch on finger release using the strongest
