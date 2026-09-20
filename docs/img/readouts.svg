@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="976" height="742" viewBox="0 0 976 742" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" role="img" aria-label="The ten readout layouts, each drawn on a 172 by 320 panel">
+<defs>
+<clipPath id="pan"><rect width="172" height="320" rx="4"/></clipPath>
+</defs>
+<text x="10" y="23" font-size="12" font-weight="700" letter-spacing="1.4" fill="#d97757">CODEC</text>
+<g transform="translate(10,36)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#262624"/>
+<text x="9" y="26.48" font-size="16" fill="#94907e" xml:space="preserve">SESSION</text>
+<text x="9" y="96.16" font-size="72" fill="#f5f4ef" xml:space="preserve">63</text>
+<text x="118" y="94.96" font-size="32" fill="#94907e" xml:space="preserve">%</text>
+<rect x="9" y="126" width="154" height="12" rx="6" fill="#4a382f"/>
+<rect x="9" y="126" width="97" height="12" rx="6" fill="#d97757"/>
+<text x="9" y="154.24" font-size="8" fill="#94907e" xml:space="preserve">2h 14m to reset</text>
+<text x="9" y="198.48" font-size="16" fill="#94907e" xml:space="preserve">WEEKLY</text>
+<text x="9" y="268.16" font-size="72" fill="#f5f4ef" xml:space="preserve">31</text>
+<text x="118" y="266.96" font-size="32" fill="#94907e" xml:space="preserve">%</text>
+</g>
+<text x="206" y="23" font-size="12" font-weight="700" letter-spacing="1.4" fill="#5ee08a">TACTICAL</text>
+<g transform="translate(206,36)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#050806"/>
+<text x="8" y="16.24" font-size="8" fill="#3f7a54" xml:space="preserve">[ SESSION ]</text>
+<rect x="14" y="90" width="18" height="3" fill="#5ee08a"/>
+<rect x="14" y="90" width="3" height="18" fill="#5ee08a"/>
+<rect x="140" y="90" width="18" height="3" fill="#5ee08a"/>
+<rect x="155" y="90" width="3" height="18" fill="#5ee08a"/>
+<rect x="14" y="191" width="18" height="3" fill="#5ee08a"/>
+<rect x="14" y="176" width="3" height="18" fill="#5ee08a"/>
+<rect x="140" y="191" width="18" height="3" fill="#5ee08a"/>
+<rect x="155" y="176" width="3" height="18" fill="#5ee08a"/>
+<text x="22" y="174.16" font-size="72" fill="#5ee08a" xml:space="preserve">63%</text>
+<text x="8" y="220.24" font-size="8" fill="#3f7a54" xml:space="preserve">REMAINING</text>
+<rect x="8" y="236" width="156" height="16" fill="#0c1a10"/>
+<rect x="9" y="237" width="14" height="14" fill="#5ee08a"/>
+<rect x="25" y="237" width="14" height="14" fill="#5ee08a"/>
+<rect x="41" y="237" width="14" height="14" fill="#5ee08a"/>
+<rect x="57" y="237" width="14" height="14" fill="#5ee08a"/>
+<rect x="73" y="237" width="14" height="14" fill="#5ee08a"/>
+<rect x="89" y="237" width="14" height="14" fill="#5ee08a"/>
+<text x="8" y="272.24" font-size="8" fill="#3f7a54" xml:space="preserve">RESET 02:14:00</text>
+<text x="8" y="292.24" font-size="8" fill="#3f7a54" xml:space="preserve">WEEKLY 31%</text>
+</g>
+<text x="402" y="23" font-size="12" font-weight="700" letter-spacing="1.4" fill="#ffb000">AMBER CRT</text>
+<g transform="translate(402,36)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#0d0a04"/>
+<text x="8" y="18.24" font-size="8" fill="#7a5510" xml:space="preserve">YOYU SYS v1.14</text>
+<text x="8" y="34.24" font-size="8" fill="#7a5510" xml:space="preserve">--------------------</text>
+<text x="8" y="60.48" font-size="16" fill="#ffb000" xml:space="preserve">&gt; SESSION</text>
+<text x="8" y="111.44" font-size="48" fill="#ffb000" xml:space="preserve">63%</text>
+<text x="8" y="138.24" font-size="8" fill="#7a5510" xml:space="preserve">&gt; RESET IN 2H14M</text>
+<text x="8" y="158.24" font-size="8" fill="#7a5510" xml:space="preserve">&gt; WEEKLY   31%</text>
+<text x="8" y="178.24" font-size="8" fill="#7a5510" xml:space="preserve">&gt; OPUS      8%</text>
+<text x="8" y="206.24" font-size="8" fill="#7a5510" xml:space="preserve">--------------------</text>
+<text x="8" y="226.24" font-size="8" fill="#ffb000" xml:space="preserve">&gt; STATUS OK</text>
+</g>
+<text x="598" y="23" font-size="12" font-weight="700" letter-spacing="1.4" fill="#5ec8e0">ICE</text>
+<g transform="translate(598,36)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#0b1114"/>
+<text x="10" y="18.24" font-size="8" fill="#4a7d8c" xml:space="preserve">SESSION</text>
+<text x="96" y="18.24" font-size="8" fill="#4a7d8c" xml:space="preserve">WEEKLY</text>
+<rect x="10" y="34" width="62" height="220" fill="#143038"/>
+<rect x="10" y="115" width="62" height="139" fill="#5ec8e0"/>
+<rect x="96" y="34" width="62" height="220" fill="#143038"/>
+<rect x="96" y="186" width="62" height="68" fill="#5ec8e0"/>
+<rect x="74" y="88" width="6" height="2" fill="#4a7d8c"/>
+<rect x="74" y="143" width="10" height="2" fill="#4a7d8c"/>
+<rect x="74" y="198" width="6" height="2" fill="#4a7d8c"/>
+<text x="10" y="288.96" font-size="32" fill="#e6f4f7" xml:space="preserve">63</text>
+<text x="96" y="288.96" font-size="32" fill="#e6f4f7" xml:space="preserve">31</text>
+<text x="10" y="306.24" font-size="8" fill="#4a7d8c" xml:space="preserve">2H14M</text>
+<text x="96" y="306.24" font-size="8" fill="#4a7d8c" xml:space="preserve">3D 4H</text>
+</g>
+<text x="794" y="23" font-size="12" font-weight="700" letter-spacing="1.4" fill="#a8442a">PAPER</text>
+<g transform="translate(794,36)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#f0eee6"/>
+<text x="10" y="20.24" font-size="8" fill="#6b6759" xml:space="preserve">YOYU · USAGE DOCKET</text>
+<rect x="10" y="32" width="152" height="2" fill="#3d3929"/>
+<text x="10" y="52.24" font-size="8" fill="#6b6759" xml:space="preserve">SESSION .........</text>
+<text x="10" y="93.2" font-size="40" fill="#3d3929" xml:space="preserve">63%</text>
+<rect x="10" y="112" width="152" height="1" fill="#cfc9ba"/>
+<text x="10" y="128.24" font-size="8" fill="#6b6759" xml:space="preserve">WEEKLY ..........</text>
+<text x="10" y="156.72" font-size="24" fill="#3d3929" xml:space="preserve">31%</text>
+<rect x="10" y="172" width="152" height="1" fill="#cfc9ba"/>
+<text x="10" y="188.24" font-size="8" fill="#6b6759" xml:space="preserve">OPUS ............</text>
+<text x="10" y="216.72" font-size="24" fill="#3d3929" xml:space="preserve">8%</text>
+<rect x="10" y="232" width="152" height="1" fill="#cfc9ba"/>
+<text x="10" y="252.24" font-size="8" fill="#6b6759" xml:space="preserve">RESETS 2H14M</text>
+<text x="10" y="302.24" font-size="8" fill="#6b6759" xml:space="preserve">·····················</text>
+</g>
+<text x="10" y="399" font-size="12" font-weight="700" letter-spacing="1.4" fill="#c8c6bf">MONO</text>
+<g transform="translate(10,412)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#0a0a0a"/>
+<rect x="10" y="26" width="152" height="1" fill="#4a4a48"/>
+<text x="10" y="18.24" font-size="8" fill="#6a6a68" xml:space="preserve">SESSION</text>
+<text x="0" y="18.24" font-size="8" fill="#6a6a68" xml:space="preserve">2H14M</text>
+<text x="10" y="122.16" font-size="72" fill="#e8e8e4" xml:space="preserve">63</text>
+<rect x="10" y="160" width="97" height="4" fill="#e8e8e4"/>
+<rect x="107" y="160" width="57" height="4" fill="#2a2a29"/>
+<text x="10" y="186.24" font-size="8" fill="#6a6a68" xml:space="preserve">PER CENT REMAINING</text>
+<rect x="10" y="232" width="152" height="1" fill="#2a2a29"/>
+<text x="10" y="250.24" font-size="8" fill="#6a6a68" xml:space="preserve">WEEKLY</text>
+<text x="10" y="280.72" font-size="24" fill="#9a9a96" xml:space="preserve">31</text>
+</g>
+<text x="206" y="399" font-size="12" font-weight="700" letter-spacing="1.4" fill="#f2a6c0">SAKURA</text>
+<g transform="translate(206,412)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#1c1318"/>
+<text x="12" y="22.24" font-size="8" fill="#8c6b78" xml:space="preserve">session</text>
+<rect x="12" y="40" width="148" height="120" rx="26" fill="#3d2430"/>
+<text x="26" y="115.92" font-size="64" fill="#fdeef4" xml:space="preserve">63</text>
+<text x="118" y="110.72" font-size="24" fill="#f2a6c0" xml:space="preserve">%</text>
+<rect x="12" y="180" width="148" height="14" rx="7" fill="#3d2430"/>
+<rect x="12" y="180" width="93" height="14" rx="7" fill="#f2a6c0"/>
+<rect x="48" y="202" width="6" height="6" fill="#8c6b78"/>
+<rect x="83" y="202" width="6" height="6" fill="#8c6b78"/>
+<rect x="118" y="202" width="6" height="6" fill="#8c6b78"/>
+<text x="12" y="230.24" font-size="8" fill="#8c6b78" xml:space="preserve">back in 2h 14m</text>
+<text x="12" y="272.24" font-size="8" fill="#8c6b78" xml:space="preserve">weekly</text>
+<text x="12" y="300.72" font-size="24" fill="#fdeef4" xml:space="preserve">31%</text>
+</g>
+<text x="402" y="399" font-size="12" font-weight="700" letter-spacing="1.4" fill="#ff4fd8">NEON NOIR</text>
+<g transform="translate(402,412)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#0e0a16"/>
+<rect x="-40" y="70" width="260" height="96" fill="#1a0f2e" transform="rotate(-14 90 118)"/>
+<text x="10" y="22.24" font-size="8" fill="#7a5f96" xml:space="preserve">SESSION</text>
+<text x="14" y="140.16" font-size="72" fill="#38e0ff" xml:space="preserve">63</text>
+<text x="10" y="136.16" font-size="72" fill="#ff4fd8" xml:space="preserve">63</text>
+<rect x="10" y="180" width="152" height="3" fill="#38e0ff"/>
+<text x="10" y="200.24" font-size="8" fill="#7a5f96" xml:space="preserve">PER CENT LEFT</text>
+<text x="10" y="250.24" font-size="8" fill="#7a5f96" xml:space="preserve">RESET 2H14M</text>
+<text x="10" y="272.24" font-size="8" fill="#7a5f96" xml:space="preserve">WEEKLY</text>
+<text x="10" y="300.72" font-size="24" fill="#eae2ff" xml:space="preserve">31%</text>
+</g>
+<text x="598" y="399" font-size="12" font-weight="700" letter-spacing="1.4" fill="#7fb2ff">BLUEPRINT</text>
+<g transform="translate(598,412)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#0a1428"/>
+<text x="10" y="18.24" font-size="8" fill="#4f7099" xml:space="preserve">FIG.1 SESSION</text>
+<rect x="10" y="34" width="152" height="1" fill="#1b3255"/>
+<rect x="10" y="70" width="1" height="150" fill="#4f7099"/>
+<rect x="107" y="70" width="1" height="150" fill="#7fb2ff"/>
+<rect x="162" y="70" width="1" height="150" fill="#4f7099"/>
+<rect x="10" y="142" width="97" height="2" fill="#7fb2ff"/>
+<text x="14" y="126.24" font-size="8" fill="#7fb2ff" xml:space="preserve">|&lt;---- 63% ----&gt;|</text>
+<rect x="107" y="142" width="55" height="2" fill="#1b3255"/>
+<text x="10" y="199.44" font-size="48" fill="#dceaff" xml:space="preserve">63%</text>
+<text x="10" y="244.24" font-size="8" fill="#4f7099" xml:space="preserve">SCALE 1:100 · REMAINING</text>
+<text x="10" y="268.24" font-size="8" fill="#4f7099" xml:space="preserve">RESET .... 2H14M</text>
+<text x="10" y="288.24" font-size="8" fill="#4f7099" xml:space="preserve">WEEKLY ... 31%</text>
+</g>
+<text x="794" y="399" font-size="12" font-weight="700" letter-spacing="1.4" fill="#9bbc0f">HANDHELD</text>
+<g transform="translate(794,412)" clip-path="url(#pan)">
+<rect width="172" height="320" fill="#9bbc0f"/>
+<text x="16" y="32.48" font-size="16" fill="#0f380f" xml:space="preserve">SESSION</text>
+<text x="16" y="50.24" font-size="8" fill="#306230" xml:space="preserve">LV.63  HP</text>
+<rect x="12" y="84" width="14" height="14" fill="#0f380f"/>
+<rect x="28" y="84" width="14" height="14" fill="#0f380f"/>
+<rect x="44" y="84" width="14" height="14" fill="#0f380f"/>
+<rect x="60" y="84" width="14" height="14" fill="#0f380f"/>
+<rect x="76" y="84" width="14" height="14" fill="#0f380f"/>
+<rect x="92" y="84" width="14" height="14" fill="#306230"/>
+<text x="14" y="173.92" font-size="64" fill="#0f380f" xml:space="preserve">63</text>
+<text x="106" y="168.72" font-size="24" fill="#306230" xml:space="preserve">%</text>
+<text x="16" y="240.24" font-size="8" fill="#0f380f" xml:space="preserve">PLENTY LEFT.</text>
+<text x="16" y="260.24" font-size="8" fill="#0f380f" xml:space="preserve">REFILLS IN 2H14M.</text>
+<text x="16" y="290.24" font-size="8" fill="#306230" xml:space="preserve">WEEKLY 31%</text>
+<rect x="8" y="10" width="156" height="56" fill="none" stroke="#0f380f" stroke-width="3"/>
+<rect x="8" y="80" width="156" height="22" fill="none" stroke="#0f380f" stroke-width="3"/>
+<rect x="8" y="220" width="156" height="90" fill="none" stroke="#0f380f" stroke-width="3"/>
+</g>
+</svg>

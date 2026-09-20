@@ -7,8 +7,8 @@ no estimating.
 
 Built on one **~$26 [Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)**
 with screen, touch, battery header and USB-C all on it. No Raspberry Pi, no
-Linux, no soldering. A second, larger board is supported too. See
-[Buy the hardware](#buy-the-hardware).
+Linux, no soldering. Two other boards are supported, including a smaller one at
+about $20. See [Buy the hardware](#buy-the-hardware).
 
 <p align="center">
   <img src="docs/img/meters.jpg"  width="30%" alt="Meters: every usage window with a bar and a reset countdown">
@@ -41,6 +41,12 @@ If `claude` runs on your machine and you're signed in, you're good.
 Three boards work, and all of them flash from the browser. The setup page asks
 which one you have before it writes anything, because the image and the panel
 have to match.
+
+<p align="center">
+  <img src="docs/img/boards.svg" width="78%" alt="The three panels drawn at their true relative sizes: the 2-inch LCD, the square 2.16-inch AMOLED, and the narrow 1.47-inch C6">
+</p>
+<p align="center"><sub>True relative sizes. The C6 is meant to sit sideways;
+it is shown upright here so the three can be compared.</sub></p>
 
 **[Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)**
 2", 240×320, about $26. The reference board: every screen is drawn against this
@@ -165,7 +171,7 @@ the command line, `companion.py --disconnect`.
   The money goes where the percentage does, plus a phone alert the first time a
   period tips over. It only appears when credits are actually being spent;
   having them available is a fact about your account, not about today.
-- **Nine screens**, cycled by a tap or on a timer: meters, focus, pace,
+- **Ten screens**, cycled by a tap or on a timer: meters, micro, focus, pace,
   history, your character, a timer, actions, projects and settings. The setup
   page shows each one and what it is for, so you can pick them before the
   board is even on your desk, and any of them can be switched off later.
@@ -175,11 +181,16 @@ the command line, `companion.py --disconnect`.
   down; the **plant** grows; the **cat** gets a bigger ball of yarn. Four of
   the five are continuous, so 47% looks like 47% instead of rounding into a
   bucket. Pick one on the board's settings page.
-- **Thirteen themes.** A theme is a palette *and* a layout: the screens that
-  show your headroom are drawn a different way in each -- corner brackets and a
-  segmented gauge, terminal lines under a cursor, columns filling from the
-  bottom, a printed docket, a handheld console. Set from the board's own
-  settings page, which previews all thirteen.
+- **Thirteen themes over ten layouts.** A theme is a palette *and* a layout:
+  the screens that show your headroom are drawn a different way in each. Set
+  from the board's own settings page, which previews all thirteen.
+
+<p align="center">
+  <img src="docs/img/readouts.svg" width="100%" alt="The ten readout layouts: Codec, Tactical, Amber CRT, Ice, Paper, Mono, Sakura, Neon Noir, Blueprint and Handheld">
+</p>
+<p align="center"><sub>The ten layouts. Nord and Tokyo Night reuse Codec, which
+is what makes thirteen themes out of ten.</sub></p>
+
 - **Touch & motion.** Tap to cycle screens, long-press to flip % left / %
   used, swipe for brightness; flip it face-down to sleep, shake to wake.
   (2" LCD board only. The AMOLED's touch does not work and the C6 has none, so
