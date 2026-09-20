@@ -18,3 +18,18 @@ the C, and because the next theme is easier to try here than on a panel.
 
 They live outside `docs/` on purpose: the Pages workflow publishes that
 directory verbatim, so anything in it is public.
+
+## The README's pictures
+
+`make-readme-images.py` builds `docs/img/readouts.svg` and `docs/img/boards.svg`
+from `layouts.html`, by parsing it rather than redrawing it — so the pictures in
+the README cannot quietly stop matching the mock they came from. Change a
+layout here, re-run it from the repo root, commit both.
+
+```
+python design/make-readme-images.py
+```
+
+SVG rather than screenshots, because GitHub strips inline `<svg>` from Markdown
+but serves committed files fine, and a file that regenerates from its source
+beats a PNG nobody can edit.
