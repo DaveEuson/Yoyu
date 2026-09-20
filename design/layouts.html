@@ -1,0 +1,350 @@
+<title>Yoyu Readouts</title>
+<style>
+  body{margin:0;background:#0d0d0c;color:#d8d6cf;font:13px/1.55 system-ui,sans-serif;
+    padding-inline:20px;padding-block:26px 70px}
+  h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:#8a8577;
+    font-weight:600;margin:0 0 6px}
+  .sub{color:#6f6b62;margin:0 0 26px;max-width:76ch}
+  .set{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,392px),1fr));gap:24px}
+  .th{border:1px solid #222221;border-radius:10px;padding:14px;background:#151514}
+  .nm{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin:0 0 2px}
+  .why{font-size:11.5px;color:#6f6b62;margin:0 0 12px;min-height:32px}
+  .pair{display:flex;gap:12px;flex-wrap:wrap}
+  .p{position:relative;width:172px;max-width:100%;height:320px;overflow:hidden;
+    border-radius:3px;font-family:ui-monospace,Menlo,Consolas,monospace;flex:0 0 auto}
+  @media (prefers-reduced-motion:reduce){.pulse,.blink{animation:none}}
+  .t{position:absolute;white-space:pre;line-height:1}
+  .s1{font-size:8px}.s2{font-size:16px}.s3{font-size:24px}.s4{font-size:32px}
+  .s5{font-size:40px}.s6{font-size:48px}.s8{font-size:64px}.s9{font-size:72px}
+  .r{position:absolute}
+  @keyframes br{0%,100%{opacity:1}50%{opacity:.45}}
+  @keyframes bl{0%,49%{opacity:1}50%,100%{opacity:0}}
+  .pulse{animation:br 1.6s ease-in-out infinite}
+  .blink{animation:bl 1s steps(1) infinite}
+  .scan{position:absolute;inset:0;background:repeating-linear-gradient(
+    to bottom,rgba(0,0,0,.28) 0 1px,transparent 1px 3px);pointer-events:none}
+</style>
+<h1>Ten readouts · ten personalities</h1>
+<p class="sub">Not ten paint jobs. Each theme lays the panel out its own way, from
+its own world. Same data every time: session 63% left and healthy, then 6% and
+about to stop you. Everything here is rectangles, lines and the bitmap font, so
+all of it can be drawn on the device exactly as shown.</p>
+
+<div class="set">
+
+<!-- 1 CODEC -->
+<div class="th"><p class="nm" style="color:#d97757">Codec · default</p>
+<p class="why">Yoyu's own. One hero number, thin bar, the row floods when it turns critical.</p>
+<div class="pair">
+  <div class="p" style="background:#262624">
+    <div class="t s2" style="left:9px;top:14px;color:#94907e">SESSION</div>
+    <div class="t s9" style="left:9px;top:40px;color:#f5f4ef">63</div>
+    <div class="t s4" style="left:118px;top:70px;color:#94907e">%</div>
+    <div class="r" style="left:9px;top:126px;width:154px;height:12px;border-radius:9px;background:#4a382f"></div>
+    <div class="r" style="left:9px;top:126px;width:97px;height:12px;border-radius:9px;background:#d97757"></div>
+    <div class="t s1" style="left:9px;top:148px;color:#94907e">2h 14m to reset</div>
+    <div class="t s2" style="left:9px;top:186px;color:#94907e">WEEKLY</div>
+    <div class="t s9" style="left:9px;top:212px;color:#f5f4ef">31</div>
+    <div class="t s4" style="left:118px;top:242px;color:#94907e">%</div>
+  </div>
+  <div class="p" style="background:#262624">
+    <div class="r pulse" style="left:0;right:0;top:0;height:160px;background:#e05252"></div>
+    <div class="t s2" style="left:9px;top:14px;color:#2a1111">SESSION</div>
+    <div class="t s9" style="left:9px;top:40px;color:#2a1111">6</div>
+    <div class="t s4" style="left:63px;top:70px;color:#2a1111">%</div>
+    <div class="t s2" style="left:9px;top:128px;color:#2a1111">41m to reset</div>
+    <div class="t s2" style="left:9px;top:186px;color:#94907e">WEEKLY</div>
+    <div class="t s9" style="left:9px;top:212px;color:#f5f4ef">31</div>
+  </div>
+</div></div>
+
+<!-- 2 TACTICAL -->
+<div class="th"><p class="nm" style="color:#5ee08a">Tactical</p>
+<p class="why">A target reticle. Corner brackets frame the number; the bar is ten discrete cells, like ammunition.</p>
+<div class="pair">
+  <div class="p" style="background:#050806">
+    <div class="t s1" style="left:8px;top:10px;color:#3f7a54">[ SESSION ]</div>
+    <div class="r" style="left:14px;top:90px;width:18px;height:3px;background:#5ee08a"></div>
+    <div class="r" style="left:14px;top:90px;width:3px;height:18px;background:#5ee08a"></div>
+    <div class="r" style="right:14px;top:90px;width:18px;height:3px;background:#5ee08a"></div>
+    <div class="r" style="right:14px;top:90px;width:3px;height:18px;background:#5ee08a"></div>
+    <div class="r" style="left:14px;bottom:126px;width:18px;height:3px;background:#5ee08a"></div>
+    <div class="r" style="left:14px;bottom:126px;width:3px;height:18px;background:#5ee08a"></div>
+    <div class="r" style="right:14px;bottom:126px;width:18px;height:3px;background:#5ee08a"></div>
+    <div class="r" style="right:14px;bottom:126px;width:3px;height:18px;background:#5ee08a"></div>
+    <div class="t s9" style="left:22px;top:118px;color:#5ee08a">63%</div>
+    <div class="t s1" style="left:8px;top:214px;color:#3f7a54">REMAINING</div>
+    <div class="r" style="left:8px;top:236px;width:156px;height:16px;background:#0c1a10"></div>
+    <div class="r" style="left:9px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="r" style="left:25px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="r" style="left:41px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="r" style="left:57px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="r" style="left:73px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="r" style="left:89px;top:237px;width:14px;height:14px;background:#5ee08a"></div>
+    <div class="t s1" style="left:8px;top:266px;color:#3f7a54">RESET 02:14:00</div>
+    <div class="t s1" style="left:8px;top:286px;color:#3f7a54">WEEKLY 31%</div>
+  </div>
+  <div class="p" style="background:#050806">
+    <div class="t s1 blink" style="left:8px;top:10px;color:#ff4d4d">[ ! WARNING ! ]</div>
+    <div class="r pulse" style="left:8px;top:84px;right:8px;height:150px;border:3px solid #ff4d4d"></div>
+    <div class="t s9" style="left:40px;top:118px;color:#ff4d4d">6%</div>
+    <div class="t s1" style="left:8px;top:246px;color:#ff4d4d">RESERVE CRITICAL</div>
+    <div class="r" style="left:8px;top:264px;width:156px;height:16px;background:#2a0606"></div>
+    <div class="r" style="left:9px;top:265px;width:14px;height:14px;background:#ff4d4d"></div>
+    <div class="t s1" style="left:8px;top:294px;color:#3f7a54">RESET 00:41:00</div>
+  </div>
+</div></div>
+
+<!-- 3 AMBER CRT -->
+<div class="th"><p class="nm" style="color:#ffb000">Amber CRT</p>
+<p class="why">A terminal printing status lines, cursor still blinking. Scanlines over everything.</p>
+<div class="pair">
+  <div class="p" style="background:#0d0a04">
+    <div class="t s1" style="left:8px;top:12px;color:#7a5510">YOYU SYS v1.14</div>
+    <div class="t s1" style="left:8px;top:28px;color:#7a5510">--------------------</div>
+    <div class="t s2" style="left:8px;top:48px;color:#ffb000">&gt; SESSION</div>
+    <div class="t s6" style="left:8px;top:74px;color:#ffb000">63%</div>
+    <div class="t s1" style="left:8px;top:132px;color:#7a5510">&gt; RESET IN 2H14M</div>
+    <div class="t s1" style="left:8px;top:152px;color:#7a5510">&gt; WEEKLY   31%</div>
+    <div class="t s1" style="left:8px;top:172px;color:#7a5510">&gt; OPUS      8%</div>
+    <div class="t s1" style="left:8px;top:200px;color:#7a5510">--------------------</div>
+    <div class="t s1" style="left:8px;top:220px;color:#ffb000">&gt; STATUS OK</div>
+    <div class="t s2 blink" style="left:8px;top:240px;color:#ffb000">_</div>
+    <div class="scan"></div>
+  </div>
+  <div class="p" style="background:#ffb000">
+    <div class="t s1" style="left:8px;top:12px;color:#241800">YOYU SYS v1.14</div>
+    <div class="t s1" style="left:8px;top:28px;color:#241800">--------------------</div>
+    <div class="t s2 blink" style="left:8px;top:48px;color:#241800">*** LOW RESERVE ***</div>
+    <div class="t s6" style="left:8px;top:80px;color:#241800">6%</div>
+    <div class="t s1" style="left:8px;top:140px;color:#241800">&gt; SESSION CRITICAL</div>
+    <div class="t s1" style="left:8px;top:160px;color:#241800">&gt; RESET IN 0H41M</div>
+    <div class="t s1" style="left:8px;top:188px;color:#241800">--------------------</div>
+    <div class="t s2 blink" style="left:8px;top:210px;color:#241800">_</div>
+    <div class="scan"></div>
+  </div>
+</div></div>
+
+<!-- 4 ICE -->
+<div class="th"><p class="nm" style="color:#5ec8e0">Ice</p>
+<p class="why">Laboratory columns. Each window is a vessel filling bottom-up, with tick marks to read against.</p>
+<div class="pair">
+  <div class="p" style="background:#0b1114">
+    <div class="t s1" style="left:10px;top:12px;color:#4a7d8c">SESSION</div>
+    <div class="t s1" style="left:96px;top:12px;color:#4a7d8c">WEEKLY</div>
+    <div class="r" style="left:10px;top:34px;width:62px;height:220px;background:#143038"></div>
+    <div class="r" style="left:10px;top:115px;width:62px;height:139px;background:#5ec8e0"></div>
+    <div class="r" style="left:96px;top:34px;width:62px;height:220px;background:#143038"></div>
+    <div class="r" style="left:96px;top:186px;width:62px;height:68px;background:#5ec8e0"></div>
+    <div class="r" style="left:74px;top:88px;width:6px;height:2px;background:#4a7d8c"></div>
+    <div class="r" style="left:74px;top:143px;width:10px;height:2px;background:#4a7d8c"></div>
+    <div class="r" style="left:74px;top:198px;width:6px;height:2px;background:#4a7d8c"></div>
+    <div class="t s4" style="left:10px;top:264px;color:#e6f4f7">63</div>
+    <div class="t s4" style="left:96px;top:264px;color:#e6f4f7">31</div>
+    <div class="t s1" style="left:10px;top:300px;color:#4a7d8c">2H14M</div>
+    <div class="t s1" style="left:96px;top:300px;color:#4a7d8c">3D 4H</div>
+  </div>
+  <div class="p" style="background:#0b1114">
+    <div class="r pulse" style="left:0;right:0;top:0;bottom:0;border:4px solid #ff5c7a"></div>
+    <div class="t s1" style="left:10px;top:12px;color:#ff5c7a">SESSION</div>
+    <div class="t s1" style="left:96px;top:12px;color:#4a7d8c">WEEKLY</div>
+    <div class="r" style="left:10px;top:34px;width:62px;height:220px;background:#2a0a12"></div>
+    <div class="r pulse" style="left:10px;top:241px;width:62px;height:13px;background:#ff5c7a"></div>
+    <div class="r" style="left:96px;top:34px;width:62px;height:220px;background:#143038"></div>
+    <div class="r" style="left:96px;top:186px;width:62px;height:68px;background:#5ec8e0"></div>
+    <div class="t s4" style="left:10px;top:264px;color:#ff5c7a">6</div>
+    <div class="t s4" style="left:96px;top:264px;color:#e6f4f7">31</div>
+    <div class="t s1" style="left:10px;top:300px;color:#ff5c7a">0H41M</div>
+  </div>
+</div></div>
+
+<!-- 5 PAPER -->
+<div class="th"><p class="nm" style="color:#a8442a">Paper</p>
+<p class="why">A printed docket. Ruled rows, dotted leaders, and a rubber stamp when something is wrong.</p>
+<div class="pair">
+  <div class="p" style="background:#f0eee6">
+    <div class="t s1" style="left:10px;top:14px;color:#6b6759">YOYU · USAGE DOCKET</div>
+    <div class="r" style="left:10px;top:32px;right:10px;height:2px;background:#3d3929"></div>
+    <div class="t s1" style="left:10px;top:46px;color:#6b6759">SESSION .........</div>
+    <div class="t s5" style="left:10px;top:62px;color:#3d3929">63%</div>
+    <div class="r" style="left:10px;top:112px;right:10px;height:1px;background:#cfc9ba"></div>
+    <div class="t s1" style="left:10px;top:122px;color:#6b6759">WEEKLY ..........</div>
+    <div class="t s3" style="left:10px;top:138px;color:#3d3929">31%</div>
+    <div class="r" style="left:10px;top:172px;right:10px;height:1px;background:#cfc9ba"></div>
+    <div class="t s1" style="left:10px;top:182px;color:#6b6759">OPUS ............</div>
+    <div class="t s3" style="left:10px;top:198px;color:#3d3929">8%</div>
+    <div class="r" style="left:10px;top:232px;right:10px;height:1px;background:#cfc9ba"></div>
+    <div class="t s1" style="left:10px;top:246px;color:#6b6759">RESETS 2H14M</div>
+    <div class="t s1" style="left:10px;top:296px;color:#6b6759">·····················</div>
+  </div>
+  <div class="p" style="background:#f0eee6">
+    <div class="t s1" style="left:10px;top:14px;color:#6b6759">YOYU · USAGE DOCKET</div>
+    <div class="r" style="left:10px;top:32px;right:10px;height:2px;background:#3d3929"></div>
+    <div class="t s1" style="left:10px;top:46px;color:#6b6759">SESSION .........</div>
+    <div class="t s5" style="left:10px;top:62px;color:#a82a2a">6%</div>
+    <div class="r pulse" style="left:14px;top:120px;width:144px;height:56px;border:4px solid #a82a2a;transform:rotate(-7deg)"></div>
+    <div class="t s3 pulse" style="left:30px;top:136px;color:#a82a2a;transform:rotate(-7deg)">SPENT</div>
+    <div class="r" style="left:10px;top:200px;right:10px;height:1px;background:#cfc9ba"></div>
+    <div class="t s1" style="left:10px;top:212px;color:#6b6759">BACK IN 41M</div>
+    <div class="t s1" style="left:10px;top:232px;color:#6b6759">WEEKLY .... 31%</div>
+    <div class="t s1" style="left:10px;top:296px;color:#6b6759">·····················</div>
+  </div>
+</div></div>
+
+<!-- 6 MONO -->
+<div class="th"><p class="nm" style="color:#c8c6bf">Mono</p>
+<p class="why">Swiss. A hairline, one enormous figure, nothing else. Critical inverts the whole field.</p>
+<div class="pair">
+  <div class="p" style="background:#0a0a0a">
+    <div class="r" style="left:10px;top:26px;right:10px;height:1px;background:#4a4a48"></div>
+    <div class="t s1" style="left:10px;top:12px;color:#6a6a68">SESSION</div>
+    <div class="t s1" style="right:10px;top:12px;color:#6a6a68">2H14M</div>
+    <div class="t s9" style="left:10px;top:66px;color:#e8e8e4">63</div>
+    <div class="r" style="left:10px;top:160px;width:97px;height:4px;background:#e8e8e4"></div>
+    <div class="r" style="left:107px;top:160px;width:57px;height:4px;background:#2a2a29"></div>
+    <div class="t s1" style="left:10px;top:180px;color:#6a6a68">PER CENT REMAINING</div>
+    <div class="r" style="left:10px;top:232px;right:10px;height:1px;background:#2a2a29"></div>
+    <div class="t s1" style="left:10px;top:244px;color:#6a6a68">WEEKLY</div>
+    <div class="t s3" style="left:10px;top:262px;color:#9a9a96">31</div>
+  </div>
+  <div class="p" style="background:#f2f2ee">
+    <div class="r" style="left:10px;top:26px;right:10px;height:1px;background:#8a8a86"></div>
+    <div class="t s1" style="left:10px;top:12px;color:#3a3a38">SESSION</div>
+    <div class="t s1 blink" style="right:10px;top:12px;color:#101010">41M</div>
+    <div class="t s9" style="left:10px;top:66px;color:#101010">6</div>
+    <div class="r" style="left:10px;top:160px;width:10px;height:4px;background:#101010"></div>
+    <div class="r" style="left:20px;top:160px;width:144px;height:4px;background:#c9c9c4"></div>
+    <div class="t s1" style="left:10px;top:180px;color:#3a3a38">PER CENT REMAINING</div>
+    <div class="r" style="left:10px;top:232px;right:10px;height:1px;background:#c9c9c4"></div>
+    <div class="t s1" style="left:10px;top:244px;color:#3a3a38">WEEKLY</div>
+    <div class="t s3" style="left:10px;top:262px;color:#101010">31</div>
+  </div>
+</div></div>
+
+<!-- 7 SAKURA -->
+<div class="th"><p class="nm" style="color:#f2a6c0">Sakura</p>
+<p class="why">Cute. A rounded capsule holds the number, petals mark the quarters, and the panel blushes when it's low.</p>
+<div class="pair">
+  <div class="p" style="background:#1c1318">
+    <div class="t s1" style="left:12px;top:16px;color:#8c6b78">session</div>
+    <div class="r" style="left:12px;top:40px;width:148px;height:120px;border-radius:26px;background:#3d2430"></div>
+    <div class="t s8" style="left:26px;top:66px;color:#fdeef4">63</div>
+    <div class="t s3" style="left:118px;top:92px;color:#f2a6c0">%</div>
+    <div class="r" style="left:12px;top:180px;width:148px;height:14px;border-radius:9px;background:#3d2430"></div>
+    <div class="r" style="left:12px;top:180px;width:93px;height:14px;border-radius:9px;background:#f2a6c0"></div>
+    <div class="r" style="left:48px;top:202px;width:6px;height:6px;border-radius:50%;background:#8c6b78"></div>
+    <div class="r" style="left:83px;top:202px;width:6px;height:6px;border-radius:50%;background:#8c6b78"></div>
+    <div class="r" style="left:118px;top:202px;width:6px;height:6px;border-radius:50%;background:#8c6b78"></div>
+    <div class="t s1" style="left:12px;top:224px;color:#8c6b78">back in 2h 14m</div>
+    <div class="t s1" style="left:12px;top:266px;color:#8c6b78">weekly</div>
+    <div class="t s3" style="left:12px;top:282px;color:#fdeef4">31%</div>
+  </div>
+  <div class="p" style="background:#33101f">
+    <div class="t s1" style="left:12px;top:16px;color:#ffc9db">session</div>
+    <div class="r pulse" style="left:12px;top:40px;width:148px;height:120px;border-radius:26px;background:#ff5d8f"></div>
+    <div class="t s8" style="left:44px;top:66px;color:#33101f">6</div>
+    <div class="t s3" style="left:92px;top:92px;color:#33101f">%</div>
+    <div class="t s2" style="left:12px;top:182px;color:#ffc9db">almost out!</div>
+    <div class="t s1" style="left:12px;top:210px;color:#ffc9db">back in 41m</div>
+    <div class="t s1" style="left:12px;top:266px;color:#8c6b78">weekly</div>
+    <div class="t s3" style="left:12px;top:282px;color:#fdeef4">31%</div>
+  </div>
+</div></div>
+
+<!-- 8 NEON NOIR -->
+<div class="th"><p class="nm" style="color:#ff4fd8">Neon Noir</p>
+<p class="why">Sexy. A diagonal slash of light, the number doubled as its own glow, cyan sign-rule beneath.</p>
+<div class="pair">
+  <div class="p" style="background:#0e0a16">
+    <div class="r" style="left:-40px;top:70px;width:260px;height:96px;background:#1a0f2e;transform:rotate(-14deg)"></div>
+    <div class="t s1" style="left:10px;top:16px;color:#7a5f96">SESSION</div>
+    <div class="t s9" style="left:14px;top:84px;color:#38e0ff;opacity:.55">63</div>
+    <div class="t s9" style="left:10px;top:80px;color:#ff4fd8">63</div>
+    <div class="r" style="left:10px;top:180px;width:152px;height:3px;background:#38e0ff"></div>
+    <div class="t s1" style="left:10px;top:194px;color:#7a5f96">PER CENT LEFT</div>
+    <div class="t s1" style="left:10px;top:244px;color:#7a5f96">RESET 2H14M</div>
+    <div class="t s1" style="left:10px;top:266px;color:#7a5f96">WEEKLY</div>
+    <div class="t s3" style="left:10px;top:282px;color:#eae2ff">31%</div>
+  </div>
+  <div class="p" style="background:#0e0a16">
+    <div class="r pulse" style="left:-40px;top:40px;width:260px;height:170px;background:#ff2b5e;transform:rotate(-14deg)"></div>
+    <div class="t s1" style="left:10px;top:16px;color:#ff9ab4">SESSION</div>
+    <div class="t s9" style="left:14px;top:96px;color:#ffe14f;opacity:.5">6</div>
+    <div class="t s9" style="left:10px;top:92px;color:#2a0512">6</div>
+    <div class="t s2" style="left:10px;top:214px;color:#ff2b5e">OUT IN 41M</div>
+    <div class="r" style="left:10px;top:244px;width:152px;height:3px;background:#38e0ff"></div>
+    <div class="t s1" style="left:10px;top:266px;color:#7a5f96">WEEKLY</div>
+    <div class="t s3" style="left:10px;top:282px;color:#eae2ff">31%</div>
+  </div>
+</div></div>
+
+<!-- 9 BLUEPRINT -->
+<div class="th"><p class="nm" style="color:#7fb2ff">Blueprint</p>
+<p class="why">Nerdy. The headroom is drawn as a measured dimension, with arrows, witness lines and an annotation.</p>
+<div class="pair">
+  <div class="p" style="background:#0a1428">
+    <div class="t s1" style="left:10px;top:12px;color:#4f7099">FIG.1 SESSION</div>
+    <div class="r" style="left:10px;top:34px;right:10px;height:1px;background:#1b3255"></div>
+    <div class="r" style="left:10px;top:70px;width:1px;height:150px;background:#4f7099"></div>
+    <div class="r" style="left:107px;top:70px;width:1px;height:150px;background:#7fb2ff"></div>
+    <div class="r" style="left:162px;top:70px;width:1px;height:150px;background:#4f7099"></div>
+    <div class="r" style="left:10px;top:142px;width:97px;height:2px;background:#7fb2ff"></div>
+    <div class="t s1" style="left:14px;top:120px;color:#7fb2ff">|&lt;---- 63% ----&gt;|</div>
+    <div class="r" style="left:107px;top:142px;width:55px;height:2px;background:#1b3255"></div>
+    <div class="t s6" style="left:10px;top:162px;color:#dceaff">63%</div>
+    <div class="t s1" style="left:10px;top:238px;color:#4f7099">SCALE 1:100 · REMAINING</div>
+    <div class="t s1" style="left:10px;top:262px;color:#4f7099">RESET .... 2H14M</div>
+    <div class="t s1" style="left:10px;top:282px;color:#4f7099">WEEKLY ... 31%</div>
+  </div>
+  <div class="p" style="background:#0a1428">
+    <div class="t s1" style="left:10px;top:12px;color:#ff7a45">FIG.1 SESSION · REVISE</div>
+    <div class="r" style="left:10px;top:34px;right:10px;height:1px;background:#ff7a45"></div>
+    <div class="r" style="left:10px;top:70px;width:1px;height:150px;background:#4f7099"></div>
+    <div class="r" style="left:19px;top:70px;width:1px;height:150px;background:#ff7a45"></div>
+    <div class="r pulse" style="left:10px;top:142px;width:9px;height:2px;background:#ff7a45"></div>
+    <div class="t s1 pulse" style="left:26px;top:134px;color:#ff7a45">&lt;-- 6% --&gt; TOLERANCE</div>
+    <div class="t s6" style="left:10px;top:162px;color:#ff7a45">6%</div>
+    <div class="r" style="left:10px;top:226px;width:130px;height:26px;border:1px solid #ff7a45"></div>
+    <div class="t s1" style="left:16px;top:234px;color:#ff7a45">NOTE: RESET 0H41M</div>
+    <div class="t s1" style="left:10px;top:282px;color:#4f7099">WEEKLY ... 31%</div>
+  </div>
+</div></div>
+
+<!-- 10 HANDHELD -->
+<div class="th"><p class="nm" style="color:#9bbc0f">Handheld</p>
+<p class="why">A 1989 pocket game. Segmented HP bar, dialogue box, and the panel flashes when your health is low.</p>
+<div class="pair">
+  <div class="p" style="background:#9bbc0f">
+    <div class="r" style="left:8px;top:10px;right:8px;height:56px;border:3px solid #0f380f"></div>
+    <div class="t s2" style="left:16px;top:20px;color:#0f380f">SESSION</div>
+    <div class="t s1" style="left:16px;top:44px;color:#306230">LV.63  HP</div>
+    <div class="r" style="left:8px;top:80px;width:156px;height:22px;border:3px solid #0f380f"></div>
+    <div class="r" style="left:12px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="r" style="left:28px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="r" style="left:44px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="r" style="left:60px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="r" style="left:76px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="r" style="left:92px;top:84px;width:14px;height:14px;background:#306230"></div>
+    <div class="t s8" style="left:14px;top:124px;color:#0f380f">63</div>
+    <div class="t s3" style="left:106px;top:150px;color:#306230">%</div>
+    <div class="r" style="left:8px;top:220px;right:8px;height:90px;border:3px solid #0f380f"></div>
+    <div class="t s1" style="left:16px;top:234px;color:#0f380f">PLENTY LEFT.</div>
+    <div class="t s1" style="left:16px;top:254px;color:#0f380f">REFILLS IN 2H14M.</div>
+    <div class="t s1" style="left:16px;top:284px;color:#306230">WEEKLY 31%</div>
+  </div>
+  <div class="p pulse" style="background:#9bbc0f">
+    <div class="r" style="left:8px;top:10px;right:8px;height:56px;border:3px solid #0f380f"></div>
+    <div class="t s2" style="left:16px;top:20px;color:#0f380f">SESSION</div>
+    <div class="t s1 blink" style="left:16px;top:44px;color:#0f380f">!! LOW HP !!</div>
+    <div class="r" style="left:8px;top:80px;width:156px;height:22px;border:3px solid #0f380f"></div>
+    <div class="r blink" style="left:12px;top:84px;width:14px;height:14px;background:#0f380f"></div>
+    <div class="t s8" style="left:14px;top:124px;color:#0f380f">6</div>
+    <div class="t s3" style="left:60px;top:150px;color:#0f380f">%</div>
+    <div class="r" style="left:8px;top:220px;right:8px;height:90px;border:3px solid #0f380f"></div>
+    <div class="t s1" style="left:16px;top:234px;color:#0f380f">NEARLY SPENT!</div>
+    <div class="t s1" style="left:16px;top:254px;color:#0f380f">REFILLS IN 41M.</div>
+    <div class="t s1" style="left:16px;top:284px;color:#306230">WEEKLY 31%</div>
+  </div>
+</div></div>
+
+</div>

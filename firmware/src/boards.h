@@ -13,7 +13,8 @@
 
 // ---------------------------------------------------------------- selection
 
-#if !defined(YOYU_BOARD_LCD2) && !defined(YOYU_BOARD_AMOLED216)
+#if !defined(YOYU_BOARD_LCD2) && !defined(YOYU_BOARD_AMOLED216) && \
+    !defined(YOYU_BOARD_C6LCD147)
 #define YOYU_BOARD_LCD2 1        // default: the board this project shipped on
 #endif
 
@@ -47,11 +48,25 @@
 #define TOUCH_SCL         47
 #define TOUCH_ADDR        0x15   // CST816D
 #define TOUCH_IS_CST816   1      // 8-bit registers, gestures decoded in hardware
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   1
 #define TOUCH_INT         GFX_NOT_DEFINED
 #define TOUCH_RST         GFX_NOT_DEFINED
 
 #define HAS_BATTERY_ADC   1
 #define VBAT_PIN          5      // via the onboard 200K/100K divider
+
+// This controller is a 240x320 part driving a 240x320 panel, so no offset.
+#define PANEL_COL_OFFSET  0
+#define BACKLIGHT_MAX     255    // nothing on this panel objects to full
+#define HAS_I2C_PERIPHERALS 1    // touch, and an IMU
+#define HAS_RGB_LED       0
+// Meters, Focus, History, Yoyu, Timer. What a fresh board starts with.
+#define DEFAULT_SCREEN_MASK 0x1F
+#define DEFAULT_SCREEN    0      // Meters
 
 // The other board's fingerprint, for the wrong-firmware check in main.cpp.
 // Looking for the AXP2101 on the AMOLED's own I2C pins is a positive
@@ -61,6 +76,7 @@
 #define OTHER_I2C_SDA     15
 #define OTHER_I2C_SCL     14
 #define OTHER_I2C_ANCHOR  0x34   // AXP2101, on every AMOLED board
+#define HAS_SIBLING_CHECK 1
 
 // Frozen on purpose. Boards in the field fetch these exact names for OTA, so
 // renaming them to match the product would strand every one of them. A rename
@@ -115,6 +131,11 @@
 // long presses and swipes are derived from coordinates. Register map from
 // ESPHome's cst9220 component -- Hynitron publish no datasheet.
 #define TOUCH_IS_CST816   0
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   0    // CST9220 answers, never reports a press
 
 // This board has no battery divider on an ADC pin, and looking for one was
 // the wrong question: it carries an AXP2101 power-management chip that already
@@ -127,6 +148,13 @@
 #define HAS_BATTERY_PMIC  1
 #define PMIC_ADDR         0x34   // AXP2101
 
+#define PANEL_COL_OFFSET  0
+#define BACKLIGHT_MAX     255
+#define HAS_I2C_PERIPHERALS 1    // touch, IMU, PMIC, RTC, codec
+#define HAS_RGB_LED       0
+#define DEFAULT_SCREEN_MASK 0x1F
+#define DEFAULT_SCREEN    0      // Meters
+
 // The other board's fingerprint, for the wrong-firmware check in main.cpp.
 // The CST816D sits on pins this board does not use for I2C at all, so an
 // answer there is proof of the wrong hardware rather than an inference from
@@ -135,6 +163,7 @@
 #define OTHER_I2C_SDA     48
 #define OTHER_I2C_SCL     47
 #define OTHER_I2C_ANCHOR  0x15   // CST816D, the LCD board's only I2C device
+#define HAS_SIBLING_CHECK 1
 
 // An AMOLED has no such floor: an unlit pixel emits nothing, so the accents
 // run at full blast against true black and the first impression of the panel
@@ -142,6 +171,79 @@
 #define DEFAULT_THEME     1      // Dim
 
 #define OTA_ASSET_PREFIX  "yoyu-amoled"
+
+// ------------------------------------------- Waveshare ESP32-C6-LCD-1.47
+#elif defined(YOYU_BOARD_C6LCD147)
+
+#define BOARD_NAME        "ESP32-C6-LCD-1.47"
+#define BOARD_SLUG        "c6lcd147"
+
+// 1.47" ST7789 172x320 IPS over 4-wire SPI. The controller is a 240-wide part
+// driving a 172-wide panel, so the visible columns start 34 in: (240-172)/2.
+// Without that offset everything lands shifted and clipped, which looks like a
+// broken layout rather than a missing constant.
+#define PANEL_W           172
+#define PANEL_H           320
+#define PANEL_COL_OFFSET  34
+#define PANEL_ROTATION    0
+#define PANEL_IS_QSPI     0
+#define PANEL_HAS_BACKLIGHT 1
+#define PANEL_INVERT      1      // IPS, same as the 2" board
+
+#define LCD_SCLK          7
+#define LCD_MOSI          6
+#define LCD_MISO          GFX_NOT_DEFINED   // not wired to the panel
+#define LCD_DC            15
+#define LCD_CS            14
+#define LCD_RST           21
+#define LCD_BL            22
+
+// Waveshare's documentation says twice, unprompted, to keep this panel at 50%
+// brightness or less: it heats at full brightness and the heat leaves
+// permanent dark patches on the glass. A cap in the firmware is worth more
+// than a warning in a page nobody reads, so full brightness here is half.
+#define BACKLIGHT_MAX     128
+
+// No touch and no IMU. BOOT and RESET are the only inputs on the board.
+// I2C still comes up, on two pins that are broken out and connected to
+// nothing, so the existing scan finds nothing and both features switch
+// themselves off exactly as they already do when a chip is missing.
+#define HAS_I2C_PERIPHERALS 0
+#define TOUCH_SDA         18
+#define TOUCH_SCL         19
+#define TOUCH_ADDR        0x15
+#define TOUCH_IS_CST816   1
+#define TOUCH_INT         GFX_NOT_DEFINED
+// Whether a person can change screens with their hands. Not the same as a
+// touch chip answering on the bus: the AMOLED has one that does, and never
+// reports a press. Auto-rotate leans on this, because "off" on a board nobody
+// can tap is a screen there is no way to leave.
+#define HAS_TOUCH_INPUT   0    // no touch hardware at all
+#define TOUCH_RST         GFX_NOT_DEFINED
+
+// The onboard WS2812, under the acrylic. Core 3.x drives one with
+// rgbLedWrite(), so this costs no library.
+#define HAS_RGB_LED       1
+#define RGB_LED_PIN       8
+
+#define HAS_BATTERY_ADC   0
+
+// Two screens, not ten. 172px of width is not the place for the full
+// rotation, and these are the two that answer the only questions the board
+// exists for: how much is left, and when does it run out.
+//
+// Micro rather than Meters, because Meters spends its top third on a clock and
+// a plan name. On this panel that third is the difference between a bar you
+// can read from a doorway and one you have to walk up to.
+#define DEFAULT_SCREEN_MASK ((1 << 9) | (1 << 8))   // Micro, Pace
+#define DEFAULT_SCREEN    9      // Micro
+
+#define DEFAULT_THEME     0      // Night
+#define OTA_ASSET_PREFIX  "yoyu-c6lcd147"
+
+// No sibling to look for: the check works by finding the other board's I2C
+// chip, and this board has no I2C devices of its own to be missing.
+#define HAS_SIBLING_CHECK 0
 
 #endif
 
