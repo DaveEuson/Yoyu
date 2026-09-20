@@ -736,6 +736,13 @@ static int       rotateSecs  = 0;     // 0 = tap-only; else auto-rotate every N 
 static unsigned long lastUserTouch = 0;  // for pausing auto-rotate after a tap
 static bool screenEnabled(int i) { return screenMask & (1 << i); }
 
+// Meters, Focus and Micro draw headroom through the theme's layout; the rest
+// do not. Asked by the pulse, and by the settings page when it decides whether
+// changing a theme is already visible from where you are standing.
+static bool drawsReadout(int i) {
+  return i == 0 || i == 1 || i == SCREEN_MICRO;
+}
+
 // Auto-rotate off means "I will tap it myself". On a board nobody can tap,
 // that is a screen with no way off it -- which is how a board ends up parked
 // on Meters forever with nine other screens it will never show. Pinning a
@@ -3035,42 +3042,6 @@ static void drawScreen() {
 }
 
 // ---- running out puts the countdown up by itself --------------------------
-// The moment you run out is the one moment the only useful number on the desk
-// is how long until you can work again, and it's also the moment you're least
-// likely to go tapping through screens to find it. So the board switches to
-// the countdown on its own.
-//
-// It does this once per episode. Tap away and it stays away: `exhaustEpisode`
-// holds the reset time of the window that triggered the switch, so the board
-// won't force the screen again until that window resets and is spent afresh.
-// Being out of two windows at once is still one episode, not two.
-static time_t exhaustEpisode = 0;
-
-static void checkExhaustion() {
-  int idx = -1;
-  for (int i = 0; i < nWindows; i++)
-    if (windowOut(windows[i])) { idx = i; break; }
-
-  if (idx < 0) { exhaustEpisode = 0; return; }   // recovered -> re-arm
-
-  // Without a reset time there is nothing to count down to, so leave the
-  // screen alone rather than switching to a countdown that can't count.
-  time_t ep = windows[idx].resets_at;
-  if (!ep || ep == exhaustEpisode) return;
-  exhaustEpisode = ep;                           // claim it either way
-
-  if (uiScreen == SCREEN_TIMER) return;          // already showing
-  if (!screenEnabled(SCREEN_TIMER)) return;      // Timer taken out of the rotation
-  if (pairingActive()) return;                   // the one-time code owns the screen
-  // Credits change what running out means. The takeover exists because the
-  // only useful number, once a window is spent, is how long until you can work
-  // again -- but with credits available you never stopped working, you started
-  // paying. Seizing the screen for a countdown to something that is not
-  // blocking you is worse than leaving it alone. Only when credits cannot
-  // absorb it is the reset time the thing you are waiting for.
-  if (credOn && credAvail) return;
-  uiScreen = SCREEN_TIMER;
-}
 
 // ------------------------------------------------------------ phone alerts
 // POST to ntfy (and/or Pushover) when a window crosses a threshold. The board
@@ -3498,7 +3469,6 @@ static void handlePush() {
   sendJson(200, "{\"ok\":true}");
   noteUsageActivity();
   checkAlerts();
-  checkExhaustion();
   drawScreen();
 }
 
@@ -4129,7 +4099,6 @@ static bool fetchUsage(bool allowRefresh) {
   lastPushMs = millis();
   noteUsageActivity();
   checkAlerts();
-  checkExhaustion();
   drawScreen();
   return true;
 }
@@ -5150,9 +5119,8 @@ static void handleSettingsSave() {
       // Meters, Focus and Micro all draw the layout, so if one of those is
       // up the change is already visible and moving would only disorient.
       // Anywhere else shows the half that did not change, so go where it did.
-      bool showsReadout = uiScreen == 0 || uiScreen == 1 ||
-                          uiScreen == SCREEN_MICRO;
-      if (!showsReadout && screenEnabled(SCREEN_MICRO)) uiScreen = SCREEN_MICRO;
+      if (!drawsReadout(uiScreen) && screenEnabled(SCREEN_MICRO))
+        uiScreen = SCREEN_MICRO;
     }
   }
   if (server->hasArg("avatar")) {
@@ -6108,10 +6076,16 @@ void loop() {
     drawScreen();
   }
   // A critical readout breathes: flip the flag about once a second and redraw,
-  // but only while that screen is up and something is actually critical. A
-  // still red panel stops being seen after a minute.
+  // but only while a screen that draws one is up and something is actually
+  // critical. A still red panel stops being seen after a minute.
+  //
+  // This is the whole of what running out looks like now. The board used to
+  // seize the screen for a countdown instead, which was the right answer when
+  // one screen could say it -- but it could not say it when Timer had been
+  // unticked, it overrode a screen you had deliberately chosen, and three
+  // screens now show an exhausted window as what it is: zero, pulsing.
   static unsigned long lastPulse = 0;
-  if (uiScreen == SCREEN_MICRO && !screenOff && !pairingActive() &&
+  if (drawsReadout(uiScreen) && !screenOff && !pairingActive() &&
       millis() - lastPulse >= 900) {
     lastPulse = millis();
     bool anyCrit = false;
