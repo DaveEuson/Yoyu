@@ -1065,6 +1065,20 @@ static void drawUpdateBadge(int cx, int cy) {
   gfx->fillRect(x - mapLen(1), y, mapLen(3), mapLen(5), C_BG);      // shaft
 }
 
+// One window as a readout draws it: the numbers already formatted, the
+// colours already chosen. Defined up here because Meters and Focus are drawn
+// further up the file than the layouts that render them.
+struct RowInfo {
+  const Window *w;
+  float left;
+  uint16_t fill, track;
+  bool warn, crit;
+  char pct[8];      // "63%"
+  char when[16];    // "2h 14m"
+};
+static void fillRow(RowInfo &r, const Window &w);
+static void drawReadout(RowInfo *rows, int n, int y0, int h);
+
 static void drawMeters() {
   gfx->fillScreen(C_BG);
 
@@ -1133,51 +1147,27 @@ static void drawMeters() {
     }
   }
 
-  // meters: label / big % left / bar / countdown
+  // The windows, drawn in the theme's layout between the header and whatever
+  // sits under them. Meters keeps the clock, the credits row and the
+  // freshness footer -- that is what makes it Meters rather than Micro -- and
+  // gives the readout the space left in the middle.
   //
-  // Three rows fill the screen exactly, so the credits row has to take one
-  // rather than be squeezed in beside them. It takes the third, and only once
-  // credits are actually being spent -- at which point the plan windows it
-  // displaces are pegged at 100% anyway, and "you are now paying" is the more
-  // useful of the two things competing for that space.
+  // The credits row has to take a whole row rather than be squeezed in beside
+  // them, and only once credits are actually being spent -- at which point the
+  // plan windows it displaces are pegged at 100% anyway, and "you are now
+  // paying" is the more useful of the two things competing for that space.
   const bool showCred = creditsWorthShowing();
   const int maxRows = showCred ? 2 : 3;
-  int y = 58;
-  for (int i = 0; i < nWindows && i < maxRows; i++) {
-    Window &w = windows[i];
-    float left = 100.0f - w.utilization;
-    if (left < 0) left = 0; if (left > 100) left = 100;
-    uint16_t fill  = left <= 10 ? C_CRIT  : left <= 30 ? C_WARN  : C_ACC;
-    uint16_t track = left <= 10 ? C_CRIT_T: left <= 30 ? C_WARN_T: C_ACC_T;
-
-    gfx->setTextSize(mapSz(2));
-    gfx->setTextColor(C_INK);
-    gfx->setCursor(mapX(12), mapY(y));
-    gfx->print(w.label);
-
-    if (showUsed) snprintf(buf, sizeof(buf), "%d%% used", (int)(w.utilization + 0.5f));
-    else          snprintf(buf, sizeof(buf), "%d%% left", (int)(left + 0.5f));
-    int16_t x1, y1; uint16_t tw, th;
-    gfx->setTextSize(mapSz(2));
-    gfx->getTextBounds(buf, 0, 0, &x1, &y1, &tw, &th);
-    gfx->setCursor(mapX(228) - (int)tw, mapY(y + 22));   // right-aligned
-    gfx->print(buf);
-
-    int barY = y + 44;
-    const int barX = mapX(12), barW = mapLen(216), barH = mapLen(14);
-    gfx->fillRoundRect(barX, mapY(barY), barW, barH, barH / 2, track);
-    int wpx = (int)(barW * left / 100.0f);
-    if (wpx < mapLen(8)) wpx = mapLen(8);
-    gfx->fillRoundRect(barX, mapY(barY), wpx, barH, barH / 2, fill);
-
-    fmtCountdown(w.resets_at, buf, sizeof(buf));
-    gfx->setTextSize(mapSz(2));
-    gfx->setTextColor(C_MUTED);
-    gfx->setCursor(mapX(12), mapY(barY + 18));
-    gfx->print(buf);
-
-    y += 82;
+  // The band stops short of the credits row when there is one, and short of
+  // the footer when there is not.
+  const int bandEnd = showCred ? 214 : 298;
+  if (nWindows > 0) {
+    RowInfo rows[3];
+    int n = 0;
+    for (int i = 0; i < nWindows && n < maxRows; i++) fillRow(rows[n++], windows[i]);
+    drawReadout(rows, n, mapY(52), mapY(bandEnd) - mapY(52));
   }
+  int y = 222;                               // the credits row, if it is shown
 
   // The credits row. Same shape as a meter and the same polarity: every bar on
   // this screen means "how much is left". Reading one of them backwards
@@ -1405,25 +1395,17 @@ static void drawFocus() {
       if (windows[i].utilization > windows[idx].utilization) idx = i;
   }
   Window &w = windows[idx];
-  float left = 100.0f - w.utilization;
-  if (left < 0) left = 0; if (left > 100) left = 100;
-  uint16_t fill = left <= 10 ? C_CRIT : left <= 30 ? C_WARN : C_ACC;
 
-  drawCentered(w.label, 40, 3, C_INK);
-  char buf[24];
-  int val = showUsed ? (int)(w.utilization + 0.5f) : (int)(left + 0.5f);
-  snprintf(buf, sizeof(buf), "%d%%", val);
-  drawCentered(buf, 96, 8, fill);
-  drawCentered(showUsed ? "used" : "left", 184, 2, C_MUTED);
-
-  const int fbX = mapX(20), fbW = mapLen(200), fbH = mapLen(16), fbY = mapY(220);
-  gfx->fillRoundRect(fbX, fbY, fbW, fbH, fbH / 2, C_ACC_T);
-  int wpx = (int)(fbW * left / 100.0f);
-  if (wpx < mapLen(10)) wpx = mapLen(10);
-  gfx->fillRoundRect(fbX, fbY, wpx, fbH, fbH / 2, fill);
+  // One window, drawn in the theme's own layout. Which window this is remains
+  // the point of Focus -- the choice above is the screen; the drawing is the
+  // theme's. The projection below is what Focus adds and Micro does not.
+  RowInfo row;
+  fillRow(row, w);
+  drawReadout(&row, 1, mapY(24), mapY(238) - mapY(24));
 
   // Projection: the same calculation the Pace screen makes, so two screens
   // can never disagree about one window.
+  char buf[32];
   bool projected = false;
   PaceInfo pc = paceFor(w);
   if (pc.ok && !pc.out) {
@@ -1498,11 +1480,19 @@ static uint8_t fitBox(const char *t, int maxW, int maxH, int want) {
 // The three numbers every readout below is built from. A readout may land on
 // a panel 172, 240, 320 or 480 pixels tall, in either orientation, so nothing
 // in them is written as a pixel offset from the top.
+// The band a readout draws into. Micro hands it the whole panel; Meters and
+// Focus keep their own header, projection and footer and hand it what is left.
+// Every layout below is written against roH() rather than scrH and paints
+// through the ro* wrappers, which add roY0 -- that is what lets one layout
+// serve three screens at three different heights.
+static int roY0 = 0, roHt = 0;
+static int roH() { return roHt > 0 ? roHt : scrH; }
+
 static int roPad()  { int p = scrW / 20; return p < 6 ? 6 : p; }
-static int roLine() { int l = scrH / 14; return l < 11 ? 11 : l; }
+static int roLine() { int l = roH() / 14; return l < 8 ? 8 : l; }
 // Caption size. Size 1 is 8px, which is right on a 172px panel and lost on a
 // 480px one.
-static uint8_t roCap() { return scrH >= 360 ? 2 : 1; }
+static uint8_t roCap() { return roH() >= 360 ? 2 : 1; }
 
 // ---- Readouts -------------------------------------------------------------
 //
@@ -1520,8 +1510,26 @@ static uint8_t roCap() { return scrH >= 360 ? 2 : 1; }
 static void roText(const char *t, int x, int y, uint8_t sz, uint16_t col) {
   gfx->setTextSize(sz);
   gfx->setTextColor(col);
-  gfx->setCursor(x, y);
+  gfx->setCursor(x, roY0 + y);
   gfx->print(t);
+}
+static void roFill(int x, int y, int w, int h, uint16_t c) {
+  gfx->fillRect(x, roY0 + y, w, h, c);
+}
+static void roRound(int x, int y, int w, int h, int r, uint16_t c) {
+  gfx->fillRoundRect(x, roY0 + y, w, h, r, c);
+}
+static void roFrame(int x, int y, int w, int h, uint16_t c) {
+  gfx->drawRect(x, roY0 + y, w, h, c);
+}
+static void roDot(int x, int y, int r, uint16_t c) {
+  gfx->fillCircle(x, roY0 + y, r, c);
+}
+static void roHLine(int x, int y, int w, uint16_t c) {
+  gfx->drawFastHLine(x, roY0 + y, w, c);
+}
+static void roVLine(int x, int y, int h, uint16_t c) {
+  gfx->drawFastVLine(x, roY0 + y, h, c);
 }
 
 static void roRight(const char *t, int right, int y, uint8_t sz, uint16_t col) {
@@ -1533,38 +1541,29 @@ static void roRight(const char *t, int right, int y, uint8_t sz, uint16_t col) {
 // up, and a still red screen is easy to stop seeing.
 static bool pulseOn = false;
 
-struct RowInfo {
-  const Window *w;
-  float left;
-  uint16_t fill, track;
-  bool warn, crit;
-  char pct[8];      // "63%"
-  char when[16];    // "2h 14m"
-};
+static void fillRow(RowInfo &r, const Window &w) {
+  r.w = &w;
+  r.left = 100.0f - w.utilization;
+  if (r.left < 0) r.left = 0;
+  if (r.left > 100) r.left = 100;
+  r.crit = r.left <= 10;
+  r.warn = !r.crit && r.left <= 30;
+  r.fill  = r.crit ? C_CRIT   : r.warn ? C_WARN   : C_ACC;
+  r.track = r.crit ? C_CRIT_T : r.warn ? C_WARN_T : C_ACC_T;
+  int val = showUsed ? (int)(w.utilization + 0.5f)
+                     : (int)(r.left + 0.5f);
+  snprintf(r.pct, sizeof(r.pct), "%d%%", val);
+  long mins = 0;
+  time_t now = time(nullptr);
+  if (w.resets_at && timeSynced && now > 100000)
+    mins = (long)((w.resets_at - now) / 60);
+  if (mins < 0) mins = 0;
+  fmtSpan(mins, r.when, sizeof(r.when));
+}
 
 static int readoutRows(RowInfo *out, int max) {
   int n = 0;
-  for (int i = 0; i < nWindows && n < max; i++) {
-    RowInfo &r = out[n];
-    r.w = &windows[i];
-    r.left = 100.0f - windows[i].utilization;
-    if (r.left < 0) r.left = 0;
-    if (r.left > 100) r.left = 100;
-    r.crit = r.left <= 10;
-    r.warn = !r.crit && r.left <= 30;
-    r.fill  = r.crit ? C_CRIT   : r.warn ? C_WARN   : C_ACC;
-    r.track = r.crit ? C_CRIT_T : r.warn ? C_WARN_T : C_ACC_T;
-    int val = showUsed ? (int)(windows[i].utilization + 0.5f)
-                       : (int)(r.left + 0.5f);
-    snprintf(r.pct, sizeof(r.pct), "%d%%", val);
-    long mins = 0;
-    time_t now = time(nullptr);
-    if (windows[i].resets_at && timeSynced && now > 100000)
-      mins = (long)((windows[i].resets_at - now) / 60);
-    if (mins < 0) mins = 0;
-    fmtSpan(mins, r.when, sizeof(r.when));
-    n++;
-  }
+  for (int i = 0; i < nWindows && n < max; i++) fillRow(out[n++], windows[i]);
   return n;
 }
 
@@ -1576,7 +1575,7 @@ static bool readoutCritical(const RowInfo *r, int n) {
 
 // ---- Codec: the default. One hero number per row, thin bar, flood on red ---
 static void roCodec(RowInfo *r, int n) {
-  int rowH = scrH / n, pad = roPad();
+  int rowH = roH() / n, pad = roPad();
   int innerW = scrW - 2 * pad;
   // Four bands down the row, each a share of it, so the number can never grow
   // into the bar under it.
@@ -1586,7 +1585,7 @@ static void roCodec(RowInfo *r, int n) {
   for (int i = 0; i < n; i++) {
     int top = i * rowH;
     bool flood = r[i].crit && pulseOn;
-    if (r[i].crit) gfx->fillRect(0, top, scrW, rowH, flood ? C_CRIT : C_CRIT_T);
+    if (r[i].crit) roFill(0, top, scrW, rowH, flood ? C_CRIT : C_CRIT_T);
     uint16_t ink = r[i].crit ? (flood ? C_KNOCK : C_CRIT) : C_INK;
     uint16_t lbl = r[i].crit ? ink : C_MUTED;
     int y = top + rowH / 20;
@@ -1596,9 +1595,9 @@ static void roCodec(RowInfo *r, int n) {
     roText(r[i].pct, pad, y, fitBox(r[i].pct, innerW, numH, numH / 8), ink);
     y += numH;
     if (!r[i].crit) {
-      gfx->fillRoundRect(pad, y, innerW, barH, barH / 2, r[i].track);
+      roRound(pad, y, innerW, barH, barH / 2, r[i].track);
       int wpx = (int)(innerW * r[i].left / 100.0f);
-      if (wpx > 0) gfx->fillRoundRect(pad, y, wpx, barH, barH / 2, r[i].fill);
+      if (wpx > 0) roRound(pad, y, wpx, barH, barH / 2, r[i].fill);
     }
     y += barH + rowH / 20;
     roText(r[i].when, pad, y, 1, lbl);
@@ -1616,15 +1615,15 @@ static void roTactical(RowInfo *r, int n) {
   roText(hdr, pad, lh / 2, roCap(), a.crit && !flood ? C_MUTED : hue);
 
   // Brackets, drawn as four corners of a frame that is never closed.
-  int bx = pad, by = scrH * 3 / 16, bw = scrW - 2 * pad, bh = scrH * 7 / 16;
+  int bx = pad, by = roH() * 3 / 16, bw = scrW - 2 * pad, bh = roH() * 7 / 16;
   int arm = bw / 6, th = 3;
   for (int c = 0; c < 4; c++) {
     int x = (c & 1) ? bx + bw - arm : bx;
     int y = (c & 2) ? by + bh - th : by;
-    gfx->fillRect(x, y, arm, th, hue);
+    roFill(x, y, arm, th, hue);
     int vx = (c & 1) ? bx + bw - th : bx;
     int vy = (c & 2) ? by + bh - arm : by;
-    gfx->fillRect(vx, vy, th, arm, hue);
+    roFill(vx, vy, th, arm, hue);
   }
   uint8_t sz = fitBox(a.pct, bw - 2 * pad, bh - 2 * th - 4, bh / 8);
   if (sz < 2) sz = 2;
@@ -1639,7 +1638,7 @@ static void roTactical(RowInfo *r, int n) {
   int cells = 10, cw = (scrW - 2 * pad) / cells, ch = lh;
   int lit = (int)((a.left + 5) / 10);
   for (int c = 0; c < cells; c++)
-    gfx->fillRect(pad + c * cw, y, cw - 3, ch,
+    roFill(pad + c * cw, y, cw - 3, ch,
                   c < lit ? hue : (flood ? C_CRIT_T : C_ACC_T));
   y += ch + lh / 3;
   char line[32];
@@ -1658,7 +1657,7 @@ static void roCrt(RowInfo *r, int n) {
   bool inv = crit && pulseOn;
   uint16_t bg = inv ? C_INK : C_BG, fg = inv ? C_KNOCK : C_INK;
   uint16_t dim = inv ? C_KNOCK : C_MUTED;
-  if (inv) gfx->fillRect(0, 0, scrW, scrH, bg);
+  if (inv) roFill(0, 0, scrW, roH(), bg);
   int pad = roPad(), lh = roLine();
   uint8_t cap = roCap();
   char line[44];
@@ -1677,7 +1676,7 @@ static void roCrt(RowInfo *r, int n) {
   y += bannerH;
   // The hero takes whatever the fixed lines below it leave.
   int tail = lh * (3 + (n - 1));
-  int heroH = scrH - y - tail - lh / 2;
+  int heroH = roH() - y - tail - lh / 2;
   if (heroH < 16) heroH = 16;
   uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 12);
   roText(r[0].pct, pad, y + (heroH - 8 * sz) / 2, sz, fg);
@@ -1701,23 +1700,23 @@ static void roIce(RowInfo *r, int n) {
   if (n > 2) n = 2;
   int pad = roPad(), lh = roLine(), gap = pad;
   int colW = (scrW - 2 * pad - (n - 1) * gap) / n;
-  int top = scrH / 5, numH = scrH / 5;
-  int colH = scrH - top - numH - lh * 2;
+  int top = roH() / 5, numH = roH() / 5;
+  int colH = roH() - top - numH - lh * 2;
   if (readoutCritical(r, n) && pulseOn) {
     for (int b = 0; b < 4; b++)
-      gfx->drawRect(b, b, scrW - 2 * b, scrH - 2 * b, C_CRIT);
+      roFrame(b, b, scrW - 2 * b, roH() - 2 * b, C_CRIT);
   }
   for (int i = 0; i < n; i++) {
     int x = pad + i * (colW + gap);
     roText(r[i].w->label, x, lh / 2, roCap(), r[i].crit ? C_CRIT : C_MUTED);
-    gfx->fillRect(x, top, colW, colH, r[i].track);
+    roFill(x, top, colW, colH, r[i].track);
     int h = (int)(colH * r[i].left / 100.0f);
     if (h < 3 && r[i].left > 0) h = 3;
-    gfx->fillRect(x, top + colH - h, colW, h, r[i].fill);
+    roFill(x, top + colH - h, colW, h, r[i].fill);
     // Quarter marks to read the column against, outside it so they survive.
     for (int q = 1; q < 4; q++) {
       int ty = top + colH - colH * q / 4;
-      gfx->fillRect(x + colW + 2, ty, q == 2 ? 8 : 5, 2, C_MUTED);
+      roFill(x + colW + 2, ty, q == 2 ? 8 : 5, 2, C_MUTED);
     }
     int y = top + colH + lh / 3;
     roText(r[i].pct, x, y, fitBox(r[i].pct, colW, numH, numH / 8),
@@ -1731,10 +1730,10 @@ static void roPaper(RowInfo *r, int n) {
   int pad = roPad(), lh = roLine();
   uint8_t cap = roCap();
   roText("YOYU . USAGE DOCKET", pad, lh / 2, cap, C_MUTED);
-  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 2, C_INK);
+  roFill(pad, lh * 3 / 2, scrW - 2 * pad, 2, C_INK);
   int y = lh * 2;
   int footH = lh * 2;                        // the RESETS line and its rule
-  int body = scrH - y - footH;
+  int body = roH() - y - footH;
   // The first window is the one being read; the rest are a reference.
   int h0 = n > 1 ? body * 3 / 5 : body;
   for (int i = 0; i < n; i++) {
@@ -1748,7 +1747,7 @@ static void roPaper(RowInfo *r, int n) {
            fitBox(r[i].pct, scrW - 2 * pad, nh, nh / 8),
            r[i].crit ? C_CRIT : C_INK);
     y += rh;
-    gfx->fillRect(pad, y - lh / 3, scrW - 2 * pad, 1, C_ACC_T);
+    roFill(pad, y - lh / 3, scrW - 2 * pad, 1, C_ACC_T);
   }
   if (readoutCritical(r, n)) {
     // The stamp. A real one would sit at an angle; the display cannot rotate a
@@ -1757,14 +1756,14 @@ static void roPaper(RowInfo *r, int n) {
     int by = lh * 2 + body / 2 - bh / 2;
     uint16_t c = pulseOn ? C_CRIT : C_CRIT_T;
     for (int b = 0; b < 4; b++)
-      gfx->drawRect(bx + b, by + b, bw - 2 * b, bh - 2 * b, c);
+      roFrame(bx + b, by + b, bw - 2 * b, bh - 2 * b, c);
     uint8_t sz = fitBox("SPENT", bw - 16, bh - 12, 5);
     roText("SPENT", bx + (bw - 5 * 6 * sz) / 2, by + (bh - 8 * sz) / 2, sz, c);
   }
   char line[32];
   snprintf(line, sizeof(line), "RESETS %s", r[0].when);
-  roText(line, pad, scrH - footH + lh / 4, cap, C_MUTED);
-  roText(".....................", pad, scrH - lh, cap, C_ACC_T);
+  roText(line, pad, roH() - footH + lh / 4, cap, C_MUTED);
+  roText(".....................", pad, roH() - lh, cap, C_ACC_T);
 }
 
 // ---- Mono: Swiss. A hairline, one figure, nothing else --------------------
@@ -1772,27 +1771,27 @@ static void roMono(RowInfo *r, int n) {
   bool crit = r[0].crit;
   bool inv = crit && pulseOn;
   uint16_t fg = inv ? C_KNOCK : C_INK, dim = inv ? C_KNOCK : C_MUTED;
-  if (inv) gfx->fillRect(0, 0, scrW, scrH, C_CRIT);
+  if (inv) roFill(0, 0, scrW, roH(), C_CRIT);
   int pad = roPad(), lh = roLine();
   uint8_t cap = roCap();
   roText(r[0].w->label, pad, lh / 2, cap, dim);
   roRight(r[0].when, scrW - pad, lh / 2, cap, dim);
-  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, dim);
+  roFill(pad, lh * 3 / 2, scrW - 2 * pad, 1, dim);
   int y = lh * 2;
   int tail = n > 1 ? lh * 4 : lh * 2;
-  int heroH = scrH - y - tail;
+  int heroH = roH() - y - tail;
   uint8_t sz = fitBox(r[0].pct, scrW - 2 * pad, heroH, 20);
   // Sat on the baseline of its band rather than centred: the figure is the
   // only thing on this screen, and it should sit where the eye expects type.
   roText(r[0].pct, pad, y + heroH - 8 * sz, sz, fg);
   y += heroH + lh / 3;
   int w = (int)((scrW - 2 * pad) * r[0].left / 100.0f);
-  gfx->fillRect(pad, y, scrW - 2 * pad, 4, inv ? C_CRIT_T : C_ACC_T);
-  gfx->fillRect(pad, y, w, 4, fg);
+  roFill(pad, y, scrW - 2 * pad, 4, inv ? C_CRIT_T : C_ACC_T);
+  roFill(pad, y, w, 4, fg);
   roText("PER CENT REMAINING", pad, y + lh / 2, cap, dim);
   if (n > 1) {
     y += lh * 3 / 2;
-    gfx->fillRect(pad, y, scrW - 2 * pad, 1, inv ? C_CRIT_T : C_ACC_T);
+    roFill(pad, y, scrW - 2 * pad, 1, inv ? C_CRIT_T : C_ACC_T);
     roText(r[1].w->label, pad, y + lh / 3, cap, dim);
     roRight(r[1].pct, scrW - pad, y + lh / 3, cap, fg);
   }
@@ -1805,10 +1804,10 @@ static void roSakura(RowInfo *r, int n) {
   uint8_t cap = roCap();
   bool flood = a.crit && pulseOn;
   int capX = pad, capW = scrW - 2 * pad;
-  int capY = lh * 3 / 2, capH = scrH * 2 / 5;
+  int capY = lh * 3 / 2, capH = roH() * 2 / 5;
   uint16_t capc = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
   roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
-  gfx->fillRoundRect(capX, capY, capW, capH, capH / 4, capc);
+  roRound(capX, capY, capW, capH, capH / 4, capc);
   uint8_t sz = fitBox(a.pct, capW - 2 * pad, capH - lh / 2, capH / 8);
   if (sz < 2) sz = 2;
   roText(a.pct, capX + (capW - (int)strlen(a.pct) * 6 * sz) / 2,
@@ -1820,11 +1819,11 @@ static void roSakura(RowInfo *r, int n) {
     y += lh * 2;
   } else {
     int barH = lh;
-    gfx->fillRoundRect(pad, y, capW, barH, barH / 2, a.track);
+    roRound(pad, y, capW, barH, barH / 2, a.track);
     int w = (int)(capW * a.left / 100.0f);
-    if (w > 0) gfx->fillRoundRect(pad, y, w, barH, barH / 2, a.fill);
+    if (w > 0) roRound(pad, y, w, barH, barH / 2, a.fill);
     for (int q = 1; q < 4; q++)          // petals, not ticks
-      gfx->fillCircle(pad + capW * q / 4, y + barH + lh / 2, 3, C_MUTED);
+      roDot(pad + capW * q / 4, y + barH + lh / 2, 3, C_MUTED);
     y += barH + lh;
   }
   char line[32];
@@ -1845,11 +1844,11 @@ static void roNoir(RowInfo *r, int n) {
   bool flood = a.crit && pulseOn;
   // The slash: a stack of offset rows, which is how you draw a diagonal on a
   // display that cannot rotate anything.
-  int bandTop = a.crit ? lh * 2 : scrH * 5 / 16;
-  int bandH   = a.crit ? scrH / 2 : scrH / 4;
+  int bandTop = a.crit ? lh * 2 : roH() * 5 / 16;
+  int bandH   = a.crit ? roH() / 2 : roH() / 4;
   uint16_t band = a.crit ? (flood ? C_CRIT : C_CRIT_T) : C_ACC_T;
   for (int y = 0; y < bandH; y++)
-    gfx->drawFastHLine(-40 + (y * scrW) / (bandH * 3), bandTop + y, scrW + 40, band);
+    roHLine(-40 + (y * scrW) / (bandH * 3), bandTop + y, scrW + 40, band);
   roText(a.w->label, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
   // The number may stand taller than its band -- that overhang is the look --
   // but not so tall that it reaches the header or the rule under it.
@@ -1862,7 +1861,7 @@ static void roNoir(RowInfo *r, int n) {
   roText(a.pct, pad, ny, sz, a.crit ? C_KNOCK : C_INK);
   int y = bandTop + bandH + lh / 2;
   if (y < ny + 8 * sz + lh / 2) y = ny + 8 * sz + lh / 2;
-  gfx->fillRect(pad, y, scrW - 2 * pad, 3, C_ACC);
+  roFill(pad, y, scrW - 2 * pad, 3, C_ACC);
   y += lh / 2;
   roText(a.crit ? "OUT SOON" : "PER CENT LEFT", pad, y, cap, C_MUTED);
   y += lh;
@@ -1884,22 +1883,22 @@ static void roBlueprint(RowInfo *r, int n) {
   char hdr[34];
   snprintf(hdr, sizeof(hdr), a.crit ? "FIG.1 %s . REVISE" : "FIG.1 %s", a.w->label);
   roText(hdr, pad, lh / 2, cap, a.crit ? C_CRIT : C_MUTED);
-  gfx->fillRect(pad, lh * 3 / 2, scrW - 2 * pad, 1, a.crit ? C_CRIT : C_ACC_T);
+  roFill(pad, lh * 3 / 2, scrW - 2 * pad, 1, a.crit ? C_CRIT : C_ACC_T);
 
   int left = pad, right = scrW - pad;
-  int wTop = lh * 2, wH = scrH / 3;
+  int wTop = lh * 2, wH = roH() / 3;
   int dimY = wTop + wH / 2;
   int mark = left + (int)((right - left) * a.left / 100.0f);
   // Witness lines at each end and at the measurement, then the dimension run
   // between them with arrowheads. This is the whole conceit of the theme.
-  gfx->fillRect(left, wTop, 1, wH, C_MUTED);
-  gfx->fillRect(right, wTop, 1, wH, C_MUTED);
-  gfx->fillRect(mark, wTop, 1, wH, a.crit ? C_CRIT : C_ACC);
-  gfx->fillRect(left, dimY, mark - left, 2, a.crit ? C_CRIT : C_ACC);
-  gfx->fillRect(mark, dimY, right - mark, 2, C_ACC_T);
+  roFill(left, wTop, 1, wH, C_MUTED);
+  roFill(right, wTop, 1, wH, C_MUTED);
+  roFill(mark, wTop, 1, wH, a.crit ? C_CRIT : C_ACC);
+  roFill(left, dimY, mark - left, 2, a.crit ? C_CRIT : C_ACC);
+  roFill(mark, dimY, right - mark, 2, C_ACC_T);
   for (int t = 0; t < 5; t++) {        // arrowheads
-    gfx->drawFastVLine(left + t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
-    gfx->drawFastVLine(mark - t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
+    roVLine(left + t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
+    roVLine(mark - t, dimY - t, 2 * t + 2, a.crit ? C_CRIT : C_ACC);
   }
   char cap2[24];
   snprintf(cap2, sizeof(cap2), "<-- %s -->", a.pct);
@@ -1907,7 +1906,7 @@ static void roBlueprint(RowInfo *r, int n) {
 
   int y = wTop + wH + lh / 2;
   int tail = n > 1 ? lh * 2 : lh;
-  int heroH = scrH - y - tail - lh / 2;
+  int heroH = roH() - y - tail - lh / 2;
   if (heroH < 16) heroH = 16;
   roText(a.pct, pad, y, fitBox(a.pct, scrW - 2 * pad, heroH, 20),
          a.crit ? C_CRIT : C_INK);
@@ -1931,8 +1930,8 @@ static void roHandheld(RowInfo *r, int n) {
   int pad = roPad(), lh = roLine();
   uint8_t cap = roCap();
   int boxW = scrW - 2 * pad, topH = lh * 3;
-  gfx->drawRect(pad, lh / 2, boxW, topH, C_INK);
-  gfx->drawRect(pad + 1, lh / 2 + 1, boxW - 2, topH - 2, C_INK);
+  roFrame(pad, lh / 2, boxW, topH, C_INK);
+  roFrame(pad + 1, lh / 2 + 1, boxW - 2, topH - 2, C_INK);
   roText(a.w->label, pad + lh / 2, lh,
          fitBox(a.w->label, boxW - lh, lh * 3 / 2, lh * 3 / 2 / 8), C_INK);
   if (a.crit && pulseOn) roText("!! LOW HP !!", pad + lh / 2, lh * 2 + lh / 4, cap, C_INK);
@@ -1942,23 +1941,23 @@ static void roHandheld(RowInfo *r, int n) {
   // it could show you as hearts.
   int cells = 10, cw = boxW / cells, ch = lh;
   int cy = lh / 2 + topH + lh / 2;
-  gfx->drawRect(pad, cy - 4, boxW, ch + 8, C_INK);
+  roFrame(pad, cy - 4, boxW, ch + 8, C_INK);
   int lit = (int)((a.left + 5) / 10);
   for (int c = 0; c < cells; c++) {
     bool on = c < lit;
     if (a.crit && c == 0 && !pulseOn) on = false;   // the last heart flashes
-    gfx->fillRect(pad + 4 + c * cw, cy, cw - 3, ch, on ? C_INK : C_ACC_T);
+    roFill(pad + 4 + c * cw, cy, cw - 3, ch, on ? C_INK : C_ACC_T);
   }
 
   int botH = lh * 3 + (n > 1 ? lh : 0);
-  int botY = scrH - botH - lh / 2;
+  int botY = roH() - botH - lh / 2;
   int y = cy + ch + lh / 2;
   int heroH = botY - y - lh / 2;
   if (heroH < 16) heroH = 16;
   roText(a.pct, pad + 2, y, fitBox(a.pct, boxW, heroH, 20), C_INK);
 
-  gfx->drawRect(pad, botY, boxW, botH, C_INK);
-  gfx->drawRect(pad + 1, botY + 1, boxW - 2, botH - 2, C_INK);
+  roFrame(pad, botY, boxW, botH, C_INK);
+  roFrame(pad + 1, botY + 1, boxW - 2, botH - 2, C_INK);
   roText(a.crit ? "NEARLY SPENT!" : "PLENTY LEFT.", pad + lh / 2,
          botY + lh / 2, cap, C_INK);
   char line[32];
@@ -1970,14 +1969,18 @@ static void roHandheld(RowInfo *r, int n) {
   }
 }
 
-static void drawMicro() {
-  gfx->fillScreen(C_BG);
-  if (nWindows == 0) { drawMeters(); return; }   // nothing to draw yet
+// Draw n rows in the current theme's layout, into the band (y0, h). Every
+// screen that shows headroom goes through here, which is what makes a theme
+// look like a decision about the board rather than about one screen.
+static const int RO_MIN_STRUCTURED = 112;  // pixels a fixed-line layout needs
 
-  RowInfo rows[3];
-  int n = readoutRows(rows, 3);
-  if (n == 0) { drawMeters(); return; }
-
+static void drawReadout(RowInfo *rows, int n, int y0, int h) {
+  roY0 = y0;
+  roHt = h;
+  int fits = h / 40;
+  if (fits < 1) fits = 1;
+  if (n > fits) n = fits;
+  if (h < RO_MIN_STRUCTURED) { roCodec(rows, n); roY0 = roHt = 0; return; }
   switch (THEME_READOUT[uiTheme < 0 ? 0 : uiTheme]) {
     case RO_TACTICAL:  roTactical(rows, n);  break;
     case RO_CRT:       roCrt(rows, n);       break;
@@ -1990,6 +1993,17 @@ static void drawMicro() {
     case RO_HANDHELD:  roHandheld(rows, n);  break;
     default:           roCodec(rows, n);     break;
   }
+  roY0 = 0;                                  // the band is not sticky
+  roHt = 0;
+}
+
+static void drawMicro() {
+  gfx->fillScreen(C_BG);
+  if (nWindows == 0) { drawMeters(); return; }   // nothing to draw yet
+  RowInfo rows[3];
+  int n = readoutRows(rows, 3);
+  if (n == 0) { drawMeters(); return; }
+  drawReadout(rows, n, 0, scrH);             // the whole panel, no chrome
 }
 
 // The Pace screen. One sentence at the top worth reading from across the
@@ -5016,17 +5030,11 @@ static void handleSettingsPage() {
          "screens: Micro fills the glass either way, and the rest are drawn "
          "for an upright panel and will letterbox.</p>"
          "<label>Theme</label>");
-  s += screenEnabled(SCREEN_MICRO)
-      ? F("<p class=muted style='margin:0 0 8px'>A theme is a palette "
-          "<b>and</b> a layout. The palette recolours every screen; the layout "
-          "is what <b>Micro</b> is drawn in, which is where these previews "
-          "come from. Saving a new one takes the board to it.</p>")
-      : F("<p class=muted style='margin:0 0 8px;background:#fbeee8;"
-          "border-radius:10px;padding:10px 12px'>A theme is a palette "
-          "<b>and</b> a layout, but <b>Micro is switched off</b> on this "
-          "board &mdash; and Micro is the only screen that draws the layout. "
-          "Switch it on below and these previews become what you see; leave "
-          "it off and a theme is a recolour.</p>");
+  s += F("<p class=muted style='margin:0 0 8px'>A theme is a palette "
+         "<b>and</b> a layout. The palette recolours every screen; the layout "
+         "is how your headroom itself is drawn, on <b>Meters</b>, "
+         "<b>Focus</b> and <b>Micro</b> alike. These previews are that "
+         "layout, with nothing else around it &mdash; which is Micro.</p>");
   s += F(
          "<div class=themes id=theme>");
   // Radios rather than a dropdown, because the point is seeing them. Each
@@ -5139,11 +5147,12 @@ static void handleSettingsSave() {
     if (t != uiTheme) {
       applyTheme(t);
       prefs.putInt("theme", uiTheme);   // inside the open prefs transaction
-      // A theme is a palette and a layout, and only one screen draws the
-      // layout. Picking one from a page of thirteen layout previews and being
-      // left on Meters shows you the half that did not change -- so the board
-      // moves to the screen the choice was about.
-      if (screenEnabled(SCREEN_MICRO)) uiScreen = SCREEN_MICRO;
+      // Meters, Focus and Micro all draw the layout, so if one of those is
+      // up the change is already visible and moving would only disorient.
+      // Anywhere else shows the half that did not change, so go where it did.
+      bool showsReadout = uiScreen == 0 || uiScreen == 1 ||
+                          uiScreen == SCREEN_MICRO;
+      if (!showsReadout && screenEnabled(SCREEN_MICRO)) uiScreen = SCREEN_MICRO;
     }
   }
   if (server->hasArg("avatar")) {
