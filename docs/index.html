@@ -144,8 +144,8 @@
      exactly what the buyer is choosing between and a photo of one board next
      to no photo of the other would decide it for them. Each preview also
      carries that board's own default theme, so the choice previews itself. */
-  .pick{display:grid;grid-template-columns:1fr;gap:12px;margin:14px 0 4px}
-  @media (min-width:540px){.pick{grid-template-columns:1fr 1fr}}
+  .pick{display:grid;gap:12px;margin:14px 0 4px;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
   .opt{display:flex;flex-direction:column}
   .optbtn{font-family:inherit;font-size:1rem;color:inherit;text-align:left;
     background:var(--raised);border:1px solid var(--line);border-radius:14px;
@@ -362,7 +362,8 @@
   /* Board-conditional copy. Touch is dead on the AMOLED, so anything that
      tells you to tap the screen has to disappear when that board is chosen —
      advice that can't be followed is worse than no advice. */
-  body[data-board="amoled"] .lcd-only{display:none}
+  body[data-touch="no"] .touch-only{display:none}
+  body:not([data-touch="no"]) .notouch-only{display:none}
   body:not([data-board="amoled"]) .amoled-only{display:none}
   .caption .amoled-only{display:inline}
   body:not([data-board="amoled"]) .caption .amoled-only{display:none}
@@ -468,8 +469,36 @@
           <a class="nb" href="https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm">Waveshare</a>
         </p>
       </div>
+      <div class="opt" id="opt-c6">
+        <button type="button" class="optbtn" data-board="c6" aria-pressed="false">
+          <span class="flag">Cheapest</span>
+          <svg class="panel" width="84" height="78" viewBox="0 0 84 78" aria-hidden="true">
+            <rect x="26.5" y="4" width="31" height="70" rx="4" fill="#17150f"/>
+            <rect x="31" y="12" width="14" height="2.5" rx="1.2" fill="#6b6759"/>
+            <rect x="31" y="18" width="22" height="13" rx="1.5" fill="#faf7ef"/>
+            <rect x="31" y="35" width="22" height="4" rx="2" fill="#2c2721"/>
+            <rect x="31" y="35" width="15" height="4" rx="2" fill="#d97757"/>
+            <rect x="31" y="46" width="14" height="2.5" rx="1.2" fill="#6b6759"/>
+            <rect x="31" y="52" width="22" height="11" rx="1.5" fill="#faf7ef"/>
+            <circle cx="42" cy="69" r="2.4" fill="#5ee08a"/>
+          </svg>
+          <h3>1.47&Prime; C6</h3>
+          <p class="spec">172&times;320 · about $20</p>
+          <p class="why">Small and narrow, so it shows two numbers instead of
+            nine screens. Sits sideways on a desk. Has a colour LED that goes
+            green, amber and red with your headroom.</p>
+          <span class="warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.4"/><path d="M8 4.9v3.6"/><path d="M8 11.1h.01"/></svg>
+            <span><strong>No touch on this one.</strong> There is no touch
+            layer at all, so the screens change on a timer and everything else
+            is set from a browser.</span></span>
+        </button>
+        <p class="links">
+          <a class="nb" rel="sponsored" href="https://www.amazon.com/dp/B0DHTMYTCY?tag=daveeuson01-20">Amazon</a> ·
+          <a class="nb" href="https://www.waveshare.com/esp32-c6-lcd-1.47.htm">Waveshare</a>
+        </p>
+      </div>
     </div>
-    <p class="disclose">The Amazon link above is an affiliate link. I earn a
+    <p class="disclose">The Amazon links above are affiliate links. I earn a
       commission on qualifying purchases.</p>
     <p class="muted center" id="pickhint">Pick one to continue. You can change it later.</p>
   </section>
@@ -556,9 +585,9 @@
   <section class="card stepcard" data-step="4">
     <div class="step"><span class="num">4</span><h2 tabindex="-1">Choose your screens</h2></div>
     <p>The board has ten screens. Keep the ones you will use and the rest stay
-      out of the rotation.<span class="lcd-only"> Tap the board to go from one
-      to the next.</span><span class="amoled-only"> This board has no working
-      touch, so they change on their own.</span> Skip this and a new board
+      out of the rotation.<span class="touch-only"> Tap the board to go from one
+      to the next.</span><span class="notouch-only"> This board has no touch you
+      can use, so they change on their own.</span> Skip this and a new board
       shows all ten.</p>
     <ul class="scr" id="scrlist">
       <li class="scrcard"><label>
@@ -599,7 +628,7 @@
       <li class="scrcard"><label>
         <input type="checkbox" value="actions">
         <svg class="thumb" viewBox="0 0 60 80" aria-hidden="true"><rect width="60" height="80" rx="6" fill="#17150f"/><rect x="9" y="12" width="42" height="15" rx="4" fill="#2c2721"/><rect x="14" y="18" width="18" height="3" rx="1.5" fill="#d97757"/><rect x="9" y="32" width="42" height="15" rx="4" fill="#3a2c24" stroke="#d97757" stroke-width="1"/><rect x="14" y="38" width="22" height="3" rx="1.5" fill="#faf7ef"/><rect x="9" y="52" width="42" height="15" rx="4" fill="#2c2721"/><rect x="14" y="58" width="14" height="3" rx="1.5" fill="#d97757"/></svg>
-        <span class="scrtext"><strong>Actions</strong><span>Shortcut buttons for Claude Code. Needs the companion with --actions.</span><em class="amoled-only">Needs touch, which this board lacks</em></span>
+        <span class="scrtext"><strong>Actions</strong><span>Shortcut buttons for Claude Code. Needs the companion with --actions.</span><em class="notouch-only">Needs touch, which this board lacks</em></span>
       </label></li>
       <li class="scrcard"><label>
         <input type="checkbox" value="projects" checked>
@@ -811,18 +840,17 @@
     <p class="caption">This is what you were aiming at.<span class="amoled-only">
       Photographed on the 2&Prime; board; yours is the square one.</span></p>
     <p>Leave it somewhere you'll glance at it. Amber under 30% left, red under
-      10%, and when a window runs out it puts up a countdown to the reset by
-      itself.</p>
+      10%, and a window that has run out pulses until it resets.</p>
     <p><strong>If you go past your plan limits</strong> and start spending usage
       credits, it shows those too: the money instead of a percentage, and a
       phone alert the first time a period tips over. It only appears once
       credits are actually being spent, so most days you'll never see it.</p>
-    <p class="lcd-only"><strong>On the board:</strong> tap to change screens,
+    <p class="touch-only"><strong>On the board:</strong> tap to change screens,
       long-press to flip between &ldquo;% left&rdquo; and &ldquo;% used,&rdquo;
       swipe to change brightness, and lay it face down to sleep.</p>
-    <p class="amoled-only"><strong>On this board:</strong> the screens rotate on
-      their own. Touch isn't working on the AMOLED yet, so leave auto-rotate on
-      and use the browser for the rest.</p>
+    <p class="notouch-only"><strong>On this board:</strong> the screens rotate on
+      their own, because there is no touch you can use. Leave auto-rotate on and
+      use the browser for the rest.</p>
     <p><strong>Everything else lives in a browser</strong>, at the address the
       board shows on screen: <code>/settings</code> for screens, theme,
       character and clock, <code>/alerts</code> for phone notifications, and
@@ -876,8 +904,12 @@
   // If it throws or never runs, the reader still gets every step.
   (function () {
     var BOARDS = {
-      lcd:    { name: '2″ LCD',    manifest: './firmware/manifest.json' },
-      amoled: { name: '2.16″ AMOLED', manifest: './firmware/manifest-amoled216.json' }
+      lcd:    { name: '2″ LCD',      manifest: './firmware/manifest.json',
+                touch: true },
+      amoled: { name: '2.16″ AMOLED', manifest: './firmware/manifest-amoled216.json',
+                touch: false },
+      c6:     { name: '1.47″ C6',     manifest: './firmware/manifest-c6lcd147.json',
+                touch: false }
     };
     var LAST = 6;
     var body = document.body;
@@ -898,6 +930,9 @@
       if (!BOARDS[b]) return;
       board = b;
       body.setAttribute('data-board', b);
+      // What the copy below actually branches on. Two of the three boards have
+      // no touch, so the question is whether this one can be tapped.
+      body.setAttribute('data-touch', BOARDS[b].touch ? 'yes' : 'no');
       if (ewt) ewt.setAttribute('manifest', BOARDS[b].manifest);
       [].forEach.call(document.querySelectorAll('[data-board]'), function (el) {
         var on = el.getAttribute('data-board') === b;
@@ -1039,7 +1074,7 @@
     // screens to change on their own. Only until someone picks for themselves.
     function boardDefaults() {
       if (get('yoyu-rotate')) { rot.value = get('yoyu-rotate'); return; }
-      rot.value = document.body.getAttribute('data-board') === 'amoled' ? '20' : '0';
+      rot.value = document.body.getAttribute('data-touch') === 'no' ? '20' : '0';
     }
 
     function chosen() {

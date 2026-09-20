@@ -38,9 +38,9 @@ If `claude` runs on your machine and you're signed in, you're good.
 
 ## Buy the hardware
 
-Two boards work, and both flash from the browser. The setup page asks which one
-you have before it writes anything, because the image and the panel have to
-match.
+Three boards work, and all of them flash from the browser. The setup page asks
+which one you have before it writes anything, because the image and the panel
+have to match.
 
 **[Waveshare ESP32-S3-Touch-LCD-2](https://www.waveshare.com/esp32-s3-touch-lcd-2.htm)**
 2", 240×320, about $26. The reference board: every screen is drawn against this
@@ -73,6 +73,20 @@ more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 > module. The dead link is between the controller and the sensing grid, inside
 > that module. **It is a faulty panel, not a repair and not a driver change.**
 > [Details](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
+
+**[Waveshare ESP32-C6-LCD-1.47](https://www.waveshare.com/esp32-c6-lcd-1.47.htm)**
+1.47", 172×320, about $20. The cheapest way in. A narrow panel is no place for
+nine screens, so it opens on two -- what is left, and whether you will run out
+before it resets -- drawn as large as the glass allows, and it sits sideways on
+a desk. There is a colour LED under the acrylic that tracks your headroom:
+green, amber, red.
+[on Amazon](https://www.amazon.com/dp/B0DHTMYTCY?tag=daveeuson01-20) ·
+[direct from Waveshare](https://www.waveshare.com/esp32-c6-lcd-1.47.htm)
+
+> **No touch on this board at all** -- there is no touch layer to fail. The
+> screens change on a timer and everything else is set from a browser. It is
+> also a different chip family (RISC-V, no PSRAM) with 4MB of flash, so it
+> carries its own partition table and its own firmware image.
 
 <sub>*As an Amazon Associate I earn from qualifying purchases.*</sub>
 
@@ -161,11 +175,15 @@ the command line, `companion.py --disconnect`.
   down; the **plant** grows; the **cat** gets a bigger ball of yarn. Four of
   the five are continuous, so 47% looks like 47% instead of rounding into a
   bucket. Pick one on the board's settings page.
-- **Six themes.** Night, Dim, Paper, Mono, Nord and Tokyo Night, set from the
-  board's own settings page.
+- **Thirteen themes.** A theme is a palette *and* a layout: the screens that
+  show your headroom are drawn a different way in each -- corner brackets and a
+  segmented gauge, terminal lines under a cursor, columns filling from the
+  bottom, a printed docket, a handheld console. Set from the board's own
+  settings page, which previews all thirteen.
 - **Touch & motion.** Tap to cycle screens, long-press to flip % left / %
   used, swipe for brightness; flip it face-down to sleep, shake to wake.
-  (2" LCD board only. Touch is not working on the AMOLED yet.)
+  (2" LCD board only. The AMOLED's touch does not work and the C6 has none, so
+  on those the screens change on a timer.)
 - **Battery gauge** from the LiPo header.
 - **Phone alerts** via ntfy or Pushover when a window crosses a threshold, with
   a recovery notice. There's also one the first time a period starts spending

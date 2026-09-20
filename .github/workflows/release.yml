@@ -196,10 +196,12 @@ jobs:
         run: |
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
           mkdir -p out
-          # $1 = PlatformIO env, $2 = release asset prefix. The two differ on
-          # purpose for the LCD board: its assets stay named headroom-mini-*
-          # because boards in the field fetch those exact names for OTA, and
-          # renaming them would 404 every one of them.
+          # $1 = PlatformIO env, $2 = release asset prefix, $3 = chip family.
+          # The env and the prefix differ on purpose for the LCD board: its
+          # assets stay named headroom-mini-* because boards in the field fetch
+          # those exact names for OTA, and renaming them would 404 every one of
+          # them. The chip is an argument because the C6 is not an S3, and
+          # merge_bin stamps a header the ROM loader checks.
           assemble() {
             B=".pio/build/$1"
             # Individual parts. The flasher writes these at their offsets and
@@ -210,7 +212,7 @@ jobs:
             cp "$BOOT_APP0"        "out/$2-boot_app0.bin"
             cp "$B/firmware.bin"   "out/$2-app.bin"
             # Single full-flash image for esptool / manual users.
-            esptool.py --chip esp32s3 merge_bin \
+            esptool.py --chip "$3" merge_bin \
               --flash_mode keep --flash_freq keep --flash_size keep \
               -o "out/$2-merged.bin" \
               0x0     "$B/bootloader.bin" \
@@ -218,8 +220,9 @@ jobs:
               0xe000  "$BOOT_APP0" \
               0x10000 "$B/firmware.bin"
           }
-          assemble headroom-mini  headroom-mini
-          assemble yoyu-amoled216 yoyu-amoled
+          assemble headroom-mini  headroom-mini  esp32s3
+          assemble yoyu-amoled216 yoyu-amoled    esp32s3
+          assemble yoyu-c6lcd147  yoyu-c6lcd147  esp32c6
 
       - name: Refuse to publish an image built for the wrong board
         working-directory: firmware
@@ -234,19 +237,26 @@ jobs:
           # Checked on the baked-in URL rather than a hash, because that is the
           # property that matters: both images are validly signed, so a board
           # will accept the wrong one if it ever asks for it.
-          for want in headroom-mini yoyu-amoled; do
+          PFXS="headroom-mini yoyu-amoled yoyu-c6lcd147"
+          for want in $PFXS; do
             if ! grep -qa "$want-app.bin" "out/$want-app.bin"; then
               echo "::error::out/$want-app.bin does not reference $want-app.bin --"
               echo "::error::it was built for a different board. Check"
               echo "::error::OTA_ASSET_PREFIX in firmware/src/boards.h."
               exit 1
             fi
+            # ...and no other board's. Every pair, rather than the single pair
+            # that had gone wrong once: a third board makes six ways to ship an
+            # image a board will accept and cannot run.
+            for other in $PFXS; do
+              [ "$other" = "$want" ] && continue
+              if grep -qa "$other-app.bin" "out/$want-app.bin"; then
+                echo "::error::out/$want-app.bin also references $other-app.bin, so a"
+                echo "::error::$want board could fetch and accept $other firmware."
+                exit 1
+              fi
+            done
           done
-          if grep -qa "headroom-mini-app.bin" out/yoyu-amoled-app.bin; then
-            echo "::error::The AMOLED image also references the LCD asset, so an"
-            echo "::error::AMOLED board could fetch and accept LCD firmware."
-            exit 1
-          fi
           echo "Each image references only its own OTA asset."
       - name: Sign the OTA app image (C2)
         working-directory: firmware
@@ -288,7 +298,7 @@ jobs:
           fi
           # Every board's image. One without a .sig is un-installable on
           # firmware that checks signatures, which is all of it.
-          for pfx in headroom-mini yoyu-amoled; do
+          for pfx in headroom-mini yoyu-amoled yoyu-c6lcd147; do
             openssl dgst -sha256 -sign ota_priv.pem \
               -out "out/$pfx-app.bin.sig" "out/$pfx-app.bin"
             openssl dgst -sha256 -verify embedded_pub.pem \
@@ -343,6 +353,9 @@ jobs:
                       yoyu-amoled-app.bin yoyu-amoled-app.bin.sig \
                       yoyu-amoled-bootloader.bin yoyu-amoled-partitions.bin \
                       yoyu-amoled-boot_app0.bin yoyu-amoled-merged.bin \
+                      yoyu-c6lcd147-app.bin yoyu-c6lcd147-app.bin.sig \
+                      yoyu-c6lcd147-bootloader.bin yoyu-c6lcd147-partitions.bin \
+                      yoyu-c6lcd147-boot_app0.bin yoyu-c6lcd147-merged.bin \
                       YoyuCompanion-windows.exe YoyuCompanion-macos \
                       YoyuCompanion-linux SHA256SUMS.txt \
                       yoyu-companion_amd64.deb \
