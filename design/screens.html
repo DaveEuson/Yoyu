@@ -1,0 +1,168 @@
+<title>Yoyu panels — as they are now</title>
+<style>
+  :root{
+    --bg:#262624; --ink:#f5f4ef; --muted:#94907e;
+    --acc:#d97757; --accT:#4a382f;
+    --warn:#fab219; --warnT:#463b1a;
+    --crit:#e05252; --critT:#4a2727;
+  }
+  body{margin:0;background:#141413;color:#e8e6df;
+    font:13px/1.5 system-ui,sans-serif;padding:28px}
+  h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;
+    color:#8a8577;font-weight:600;margin:0 0 20px}
+  h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:#6f6b62;font-weight:600;margin:30px 0 10px}
+  .row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  figure{margin:0}
+  figcaption{font-size:11px;color:#6f6b62;margin-top:7px;text-align:center}
+  /* A panel is a real pixel box. Everything inside is positioned in the same
+     pixels the firmware uses, so what is cramped here is cramped there. */
+  .p{position:relative;background:var(--bg);overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    box-shadow:0 0 0 1px #000,0 6px 20px rgba(0,0,0,.5)}
+  .p240{width:240px;height:320px}
+  .p172{width:172px;height:320px}
+  .p320{width:320px;height:172px}
+  .t{position:absolute;white-space:pre;line-height:1}
+  /* The device font is 6px wide and 8px tall per size step. Monospace at
+     8px*size with letter-spacing tuned to 6px*size reproduces the metrics. */
+  .s1{font-size:8px;letter-spacing:.9px}
+  .s2{font-size:16px;letter-spacing:1.8px}
+  .s3{font-size:24px;letter-spacing:2.7px}
+  .s4{font-size:32px;letter-spacing:3.6px}
+  .s5{font-size:40px;letter-spacing:4.5px}
+  .s6{font-size:48px;letter-spacing:5.4px}
+  .s8{font-size:64px;letter-spacing:7.2px}
+  .bar{position:absolute;border-radius:999px}
+</style>
+<h1>Yoyu · what the panel shows today</h1>
+
+<h2>Meters — the default screen, 240×320</h2>
+<div class="row">
+  <figure>
+    <div class="p p240">
+      <div class="t s4" style="left:10px;top:10px;color:var(--ink)">3:45 PM</div>
+      <div class="t s1" style="left:12px;top:46px;color:var(--muted)">max plan</div>
+      <div class="t s2" style="left:12px;top:58px;color:var(--ink)">Session</div>
+      <div class="t s2" style="right:12px;top:80px;color:var(--ink)">63% left</div>
+      <div class="bar" style="left:12px;top:102px;width:216px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:12px;top:102px;width:136px;height:14px;background:var(--acc)"></div>
+      <div class="t s2" style="left:12px;top:120px;color:var(--muted)">resets in 2h 14m</div>
+      <div class="t s2" style="left:12px;top:140px;color:var(--ink)">Weekly</div>
+      <div class="t s2" style="right:12px;top:162px;color:var(--ink)">31% left</div>
+      <div class="bar" style="left:12px;top:184px;width:216px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:12px;top:184px;width:67px;height:14px;background:var(--acc)"></div>
+      <div class="t s2" style="left:12px;top:202px;color:var(--muted)">resets in 3d 4h</div>
+      <div class="t s2" style="left:12px;top:222px;color:var(--ink)">Opus</div>
+      <div class="t s2" style="right:12px;top:244px;color:var(--ink)">8% left</div>
+      <div class="bar" style="left:12px;top:266px;width:216px;height:14px;background:var(--critT)"></div>
+      <div class="bar" style="left:12px;top:266px;width:17px;height:14px;background:var(--crit)"></div>
+      <div class="t s2" style="left:12px;top:284px;color:var(--muted)">resets in 3d 4h</div>
+    </div>
+    <figcaption>healthy · three windows</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p240">
+      <div class="t s4" style="left:10px;top:10px;color:var(--ink)">3:45 PM</div>
+      <div class="t s1" style="left:12px;top:46px;color:var(--muted)">max plan</div>
+      <div class="t s2" style="left:12px;top:58px;color:var(--ink)">Session</div>
+      <div class="t s2" style="right:12px;top:80px;color:var(--ink)">6% left</div>
+      <div class="bar" style="left:12px;top:102px;width:216px;height:14px;background:var(--critT)"></div>
+      <div class="bar" style="left:12px;top:102px;width:13px;height:14px;background:var(--crit)"></div>
+      <div class="t s2" style="left:12px;top:120px;color:var(--muted)">resets in 0h 41m</div>
+      <div class="t s2" style="left:12px;top:140px;color:var(--ink)">Weekly</div>
+      <div class="t s2" style="right:12px;top:162px;color:var(--ink)">22% left</div>
+      <div class="bar" style="left:12px;top:184px;width:216px;height:14px;background:var(--warnT)"></div>
+      <div class="bar" style="left:12px;top:184px;width:48px;height:14px;background:var(--warn)"></div>
+      <div class="t s2" style="left:12px;top:202px;color:var(--muted)">resets in 3d 4h</div>
+    </div>
+    <figcaption>critical · about to run out</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p240">
+      <div class="t s2" style="left:50%;top:150px;transform:translateX(-50%);color:var(--muted)">Fetching usage...</div>
+    </div>
+    <figcaption>no data yet</figcaption>
+  </figure>
+</div>
+
+<h2>Micro — new, and the C6 default</h2>
+<div class="row">
+  <figure>
+    <div class="p p172">
+      <div class="t s3" style="left:8px;top:13px;color:var(--muted)">Session</div>
+      <div class="t s8" style="left:8px;top:39px;color:var(--acc)">63%</div>
+      <div class="bar" style="left:8px;top:114px;width:156px;height:26px;background:var(--accT)"></div>
+      <div class="bar" style="left:8px;top:114px;width:98px;height:26px;background:var(--acc)"></div>
+      <div class="t s3" style="left:8px;top:173px;color:var(--muted)">Weekly</div>
+      <div class="t s8" style="left:8px;top:199px;color:var(--acc)">31%</div>
+      <div class="bar" style="left:8px;top:274px;width:156px;height:26px;background:var(--accT)"></div>
+      <div class="bar" style="left:8px;top:274px;width:48px;height:26px;background:var(--acc)"></div>
+    </div>
+    <figcaption>172×320 upright</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p320">
+      <div class="t s2" style="left:16px;top:27px;color:var(--muted)">Session</div>
+      <div class="t s5" style="right:16px;top:11px;color:var(--acc)">63%</div>
+      <div class="bar" style="left:16px;top:62px;width:288px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:16px;top:62px;width:181px;height:14px;background:var(--acc)"></div>
+      <div class="t s2" style="left:16px;top:113px;color:var(--muted)">Weekly</div>
+      <div class="t s5" style="right:16px;top:97px;color:var(--crit)">8%</div>
+      <div class="bar" style="left:16px;top:148px;width:288px;height:14px;background:var(--critT)"></div>
+      <div class="bar" style="left:16px;top:148px;width:23px;height:14px;background:var(--crit)"></div>
+    </div>
+    <figcaption>320×172 sideways</figcaption>
+  </figure>
+</div>
+
+<h2>Focus · Pace · Timer — 240×320</h2>
+<div class="row">
+  <figure>
+    <div class="p p240">
+      <div class="t s3" style="left:50%;top:40px;transform:translateX(-50%);color:var(--ink)">Session</div>
+      <div class="t s8" style="left:50%;top:96px;transform:translateX(-50%);color:var(--acc)">63%</div>
+      <div class="t s2" style="left:50%;top:184px;transform:translateX(-50%);color:var(--muted)">left</div>
+      <div class="bar" style="left:20px;top:220px;width:200px;height:16px;background:var(--accT)"></div>
+      <div class="bar" style="left:20px;top:220px;width:126px;height:16px;background:var(--acc)"></div>
+      <div class="t s2" style="left:50%;top:256px;transform:translateX(-50%);color:var(--acc)">resets before you run out</div>
+      <div class="t s1" style="left:50%;top:286px;transform:translateX(-50%);color:var(--muted)">empty ~3h 20m   resets ~2h 14m</div>
+    </div>
+    <figcaption>Focus</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p240">
+      <div class="t s1" style="left:50%;top:16px;transform:translateX(-50%);color:var(--muted)">AT THIS PACE</div>
+      <div class="t s2" style="left:50%;top:34px;transform:translateX(-50%);color:var(--ink)">Weekly runs out</div>
+      <div class="t s2" style="left:50%;top:56px;transform:translateX(-50%);color:var(--warn)">Wed 9 AM</div>
+      <div class="t s2" style="left:12px;top:94px;color:var(--ink)">Session</div>
+      <div class="t s1" style="right:12px;top:98px;color:var(--muted)">37% used</div>
+      <div class="bar" style="left:12px;top:116px;width:216px;height:10px;background:var(--accT)"></div>
+      <div class="bar" style="left:12px;top:116px;width:80px;height:10px;background:var(--acc)"></div>
+      <div style="position:absolute;left:104px;top:113px;width:2px;height:16px;background:var(--ink)"></div>
+      <div class="t s1" style="left:12px;top:134px;color:var(--muted)">about 74% used at reset</div>
+      <div class="t s2" style="left:12px;top:158px;color:var(--ink)">Weekly</div>
+      <div class="t s1" style="right:12px;top:162px;color:var(--muted)">69% used</div>
+      <div class="bar" style="left:12px;top:180px;width:216px;height:10px;background:var(--warnT)"></div>
+      <div class="bar" style="left:12px;top:180px;width:149px;height:10px;background:var(--warn)"></div>
+      <div style="position:absolute;left:129px;top:177px;width:2px;height:16px;background:var(--ink)"></div>
+      <div class="t s1" style="left:12px;top:198px;color:var(--warn)">out Wed 9 AM, 1d 12h early</div>
+      <div class="t s1" style="left:50%;top:300px;transform:translateX(-50%);color:var(--muted)">| marks where an even pace would be</div>
+    </div>
+    <figcaption>Pace</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p240">
+      <div class="t s2" style="left:50%;top:78px;transform:translateX(-50%);color:var(--crit)">Session</div>
+      <div class="t s3" style="left:50%;top:112px;transform:translateX(-50%);color:var(--ink)">back in</div>
+      <div class="t s5" style="left:50%;top:154px;transform:translateX(-50%);color:var(--ink)">0:41:12</div>
+      <div class="t s1" style="left:50%;top:214px;transform:translateX(-50%);color:var(--muted)">H : MM : SS</div>
+    </div>
+    <figcaption>Timer · out of tokens</figcaption>
+  </figure>
+</div>

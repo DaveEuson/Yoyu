@@ -1,0 +1,171 @@
+<title>Yoyu panels — proposed</title>
+<style>
+  :root{
+    --bg:#262624; --ink:#f5f4ef; --muted:#94907e;
+    --acc:#d97757; --accT:#4a382f;
+    --warn:#fab219; --warnT:#463b1a;
+    --crit:#e05252; --critT:#4a2727;
+  }
+  body{margin:0;background:#141413;color:#e8e6df;
+    font:13px/1.55 system-ui,sans-serif;padding:28px 28px 60px}
+  h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;
+    color:#8a8577;font-weight:600;margin:0 0 6px}
+  .sub{color:#6f6b62;margin:0 0 26px;max-width:70ch}
+  h2{font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    color:#6f6b62;font-weight:600;margin:34px 0 12px;
+    border-top:1px solid #2a2927;padding-top:14px}
+  .row{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+  figure{margin:0}
+  figcaption{font-size:11px;color:#6f6b62;margin-top:7px;text-align:center;max-width:240px}
+  .p{position:relative;background:var(--bg);overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;
+    box-shadow:0 0 0 1px #000,0 6px 20px rgba(0,0,0,.5)}
+  .p240{width:240px;height:320px}
+  .p172{width:172px;height:320px}
+  .p320{width:320px;height:172px}
+  .t{position:absolute;white-space:pre;line-height:1}
+  .s1{font-size:8px;letter-spacing:.9px}
+  .s2{font-size:16px;letter-spacing:1.8px}
+  .s3{font-size:24px;letter-spacing:2.7px}
+  .s4{font-size:32px;letter-spacing:3.6px}
+  .s5{font-size:40px;letter-spacing:4.5px}
+  .s6{font-size:48px;letter-spacing:5.4px}
+  .s8{font-size:64px;letter-spacing:7.2px}
+  .s10{font-size:80px;letter-spacing:9px}
+  .bar{position:absolute;border-radius:999px}
+  .fld{position:absolute;left:0;right:0}
+  @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
+  .pulse{animation:breathe 1.8s ease-in-out infinite}
+</style>
+<h1>Yoyu · proposed</h1>
+<p class="sub">Same palette, same bitmap type steps, same bar. What changes is
+where the ink goes: the meter fills the panel instead of shrinking into it, one
+number is the hero, and the screen escalates through the three colours the
+system already has. Pulse is the only motion and only critical earns it.</p>
+
+<h2>Micro · the ladder</h2>
+<div class="row">
+  <figure>
+    <div class="p p172">
+      <div class="t s2" style="left:10px;top:14px;color:var(--muted)">SESSION</div>
+      <div class="t s10" style="left:10px;top:40px;color:var(--ink)">63</div>
+      <div class="t s4" style="left:118px;top:70px;color:var(--muted)">%</div>
+      <div class="bar" style="left:10px;top:120px;width:152px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:10px;top:120px;width:96px;height:14px;background:var(--acc)"></div>
+      <div class="t s1" style="left:10px;top:144px;color:var(--muted)">2h 14m to reset</div>
+
+      <div class="t s2" style="left:10px;top:184px;color:var(--muted)">WEEKLY</div>
+      <div class="t s10" style="left:10px;top:210px;color:var(--ink)">31</div>
+      <div class="t s4" style="left:118px;top:240px;color:var(--muted)">%</div>
+      <div class="bar" style="left:10px;top:290px;width:152px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:10px;top:290px;width:47px;height:14px;background:var(--acc)"></div>
+    </div>
+    <figcaption>Calm. Quiet ground, ink number, thin bar. Nothing is asking for you.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p172">
+      <div class="fld" style="top:0;height:160px;background:var(--warnT)"></div>
+      <div class="t s2" style="left:10px;top:14px;color:var(--warn)">SESSION</div>
+      <div class="t s10" style="left:10px;top:40px;color:var(--warn)">24</div>
+      <div class="t s4" style="left:118px;top:70px;color:var(--warn)">%</div>
+      <div class="bar" style="left:10px;top:120px;width:152px;height:14px;background:#2c2512"></div>
+      <div class="bar" style="left:10px;top:120px;width:36px;height:14px;background:var(--warn)"></div>
+      <div class="t s1" style="left:10px;top:144px;color:var(--warn)">0h 51m to reset</div>
+
+      <div class="t s2" style="left:10px;top:184px;color:var(--muted)">WEEKLY</div>
+      <div class="t s10" style="left:10px;top:210px;color:var(--ink)">31</div>
+      <div class="t s4" style="left:118px;top:240px;color:var(--muted)">%</div>
+      <div class="bar" style="left:10px;top:290px;width:152px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:10px;top:290px;width:47px;height:14px;background:var(--acc)"></div>
+    </div>
+    <figcaption>Warning. Its half of the panel takes a tint. The calm row is untouched, so the contrast does the pointing.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p172">
+      <div class="fld pulse" style="top:0;height:160px;background:var(--crit)"></div>
+      <div class="t s2" style="left:10px;top:14px;color:#2a1111">SESSION</div>
+      <div class="t s10" style="left:10px;top:40px;color:#2a1111">6</div>
+      <div class="t s4" style="left:64px;top:70px;color:#2a1111">%</div>
+      <div class="t s2" style="left:10px;top:124px;color:#2a1111">41m to reset</div>
+
+      <div class="t s2" style="left:10px;top:184px;color:var(--muted)">WEEKLY</div>
+      <div class="t s10" style="left:10px;top:210px;color:var(--ink)">31</div>
+      <div class="t s4" style="left:118px;top:240px;color:var(--muted)">%</div>
+      <div class="bar" style="left:10px;top:290px;width:152px;height:14px;background:var(--accT)"></div>
+      <div class="bar" style="left:10px;top:290px;width:47px;height:14px;background:var(--acc)"></div>
+    </div>
+    <figcaption>Critical. The row floods solid and breathes. The bar goes: at 6% it was a stub saying nothing.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p172">
+      <div class="fld pulse" style="top:0;height:320px;background:var(--crit)"></div>
+      <div class="t s2" style="left:10px;top:18px;color:#2a1111">SESSION IS OUT</div>
+      <div class="t s8" style="left:10px;top:110px;color:#2a1111">0:41</div>
+      <div class="t s2" style="left:10px;top:190px;color:#2a1111">until it comes back</div>
+      <div class="t s1" style="left:10px;top:298px;color:#2a1111;opacity:.75">WEEKLY 31% · 3d 4h</div>
+    </div>
+    <figcaption>Out. The whole panel is the alarm and the countdown is the only number left.</figcaption>
+  </figure>
+</div>
+
+<h2>Micro sideways · 320×172</h2>
+<div class="row">
+  <figure>
+    <div class="p p320">
+      <div class="fld" style="top:0;height:86px;background:var(--accT)"></div>
+      <div class="fld" style="top:0;height:86px;width:202px;background:var(--acc)"></div>
+      <div class="t s2" style="left:14px;top:14px;color:#1b1a18">SESSION</div>
+      <div class="t s1" style="left:14px;top:62px;color:#1b1a18;opacity:.85">2h 14m to reset</div>
+      <div class="t s6" style="left:216px;top:20px;color:var(--ink)">63%</div>
+
+      <div class="fld pulse" style="top:86px;height:86px;background:var(--crit)"></div>
+      <div class="t s2" style="left:14px;top:100px;color:#2a1111">WEEKLY</div>
+      <div class="t s1" style="left:14px;top:148px;color:#2a1111;opacity:.85">3d 4h to reset</div>
+      <div class="t s6" style="left:236px;top:106px;color:#2a1111">8%</div>
+    </div>
+    <figcaption>Two rows, each its own state. Fill runs the long axis, which is what sideways is for.</figcaption>
+  </figure>
+</div>
+
+<h2>Meters · clock demoted, hero restored</h2>
+<div class="row">
+  <figure>
+    <div class="p p240">
+      <div class="t s1" style="left:12px;top:12px;color:var(--muted)">3:45 PM · MAX</div>
+      <div class="t s1" style="right:12px;top:12px;color:var(--muted)">SESSION</div>
+      <div class="t s10" style="left:12px;top:34px;color:var(--acc)">63</div>
+      <div class="t s4" style="left:150px;top:64px;color:var(--acc)">%</div>
+      <div class="t s2" style="left:12px;top:122px;color:var(--muted)">2h 14m to reset</div>
+      <div class="bar" style="left:12px;top:150px;width:216px;height:20px;background:var(--accT)"></div>
+      <div class="bar" style="left:12px;top:150px;width:136px;height:20px;background:var(--acc)"></div>
+
+      <div class="t s1" style="left:12px;top:192px;color:var(--muted)">WEEKLY</div>
+      <div class="t s5" style="left:12px;top:206px;color:var(--ink)">31%</div>
+      <div class="bar" style="left:12px;top:252px;width:216px;height:12px;background:var(--accT)"></div>
+      <div class="bar" style="left:12px;top:252px;width:67px;height:12px;background:var(--acc)"></div>
+
+      <div class="t s1" style="left:12px;top:280px;color:var(--muted)">OPUS</div>
+      <div class="t s2" style="left:12px;top:294px;color:var(--crit)">8%</div>
+      <div class="bar" style="left:100px;top:296px;width:128px;height:8px;background:var(--critT)"></div>
+      <div class="bar" style="left:100px;top:296px;width:10px;height:8px;background:var(--crit)"></div>
+    </div>
+    <figcaption>One hero, two supporting. Size ranks the windows by how close each is to stopping you.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="p p240">
+      <div class="fld pulse" style="top:0;height:320px;background:var(--crit)"></div>
+      <div class="t s1" style="left:12px;top:12px;color:#2a1111">3:45 PM · MAX</div>
+      <div class="t s2" style="left:12px;top:36px;color:#2a1111">SESSION IS OUT</div>
+      <div class="t s10" style="left:12px;top:86px;color:#2a1111">0:41</div>
+      <div class="t s2" style="left:12px;top:186px;color:#2a1111">until it comes back</div>
+      <div class="bar" style="left:12px;top:232px;width:216px;height:10px;background:#2a1111;opacity:.35"></div>
+      <div class="t s1" style="left:12px;top:262px;color:#2a1111">WEEKLY 31% · OPUS 8%</div>
+      <div class="t s1" style="left:12px;top:284px;color:#2a1111;opacity:.75">credits covering you</div>
+    </div>
+    <figcaption>Out. Same screen, no new layout to learn: it simply takes the whole panel.</figcaption>
+  </figure>
+</div>

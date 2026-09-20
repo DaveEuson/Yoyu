@@ -1,0 +1,305 @@
+<title>Yoyu — six palettes, one ladder</title>
+<style>
+  body{margin:0;background:#101010;color:#d8d6cf;
+    font:13px/1.55 system-ui,sans-serif;padding:26px 26px 60px}
+  h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:#8a8577;
+    font-weight:600;margin:0 0 6px}
+  .sub{color:#6f6b62;margin:0 0 24px;max-width:74ch}
+  .set{display:grid;grid-template-columns:repeat(auto-fill,minmax(392px,1fr));gap:26px}
+  .theme{border:1px solid #232322;border-radius:10px;padding:14px 14px 16px;background:#161615}
+  .name{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:600;
+    margin:0 0 2px}
+  .why{font-size:11.5px;color:#6f6b62;margin:0 0 12px;min-height:30px}
+  .pair{display:flex;gap:12px}
+  .p{position:relative;width:172px;height:230px;overflow:hidden;
+    font-family:ui-monospace,Menlo,Consolas,monospace;border-radius:3px}
+  .t{position:absolute;white-space:pre;line-height:1}
+  .s1{font-size:8px} .s2{font-size:16px} .s4{font-size:32px} .s8{font-size:58px}
+  .bar{position:absolute;border-radius:999px}
+  .fld{position:absolute;left:0;right:0}
+  @keyframes breathe{0%,100%{opacity:1}50%{opacity:.5}}
+  .pulse{animation:breathe 1.8s ease-in-out infinite}
+  .sw{display:flex;gap:4px;margin-top:10px}
+  .sw i{width:16px;height:16px;border-radius:3px;display:block}
+  .cap{font-size:10.5px;color:#5f5c55;text-align:center;margin-top:5px}
+</style>
+<h1>Ten palettes · one ladder</h1>
+<p class="sub">Same layout every time: quiet when calm, flooded and breathing when
+critical. Only the colours change. Left panel is healthy, right is the alarm, so
+each palette is judged on the thing that matters — whether the alarm reads from
+across a room without shouting when it shouldn't.</p>
+
+<div class="set">
+
+  <div class="theme">
+    <p class="name" style="color:#d97757">Codec · default</p>
+    <p class="why">The palette Yoyu already owns. Warm equipment, not a dashboard. Reads as lit metal in a dim room.</p>
+    <div class="pair">
+      <div class="p" style="background:#262624">
+        <div class="t s2" style="left:9px;top:12px;color:#94907e">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#f5f4ef">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#94907e">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#4a382f"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#d97757"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#94907e">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#94907e">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#f5f4ef">31%</div>
+      </div>
+      <div class="p" style="background:#262624">
+        <div class="fld pulse" style="top:0;height:124px;background:#e05252"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#2a1111">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#2a1111">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#2a1111">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#2a1111">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#94907e">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#f5f4ef">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#262624"></i><i style="background:#f5f4ef"></i><i style="background:#d97757"></i><i style="background:#fab219"></i><i style="background:#e05252"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#5ee08a">Tactical</p>
+    <p class="why">Phosphor green on true black. The night-vision readout the MGS feel comes from. Alarm goes red against green, which is the loudest jump in the set.</p>
+    <div class="pair">
+      <div class="p" style="background:#050806">
+        <div class="t s2" style="left:9px;top:12px;color:#3f7a54">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#5ee08a">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#3f7a54">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#12301c"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#5ee08a"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#3f7a54">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#3f7a54">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#5ee08a">31%</div>
+      </div>
+      <div class="p" style="background:#050806">
+        <div class="fld pulse" style="top:0;height:124px;background:#ff4d4d"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#2a0606">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#2a0606">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#2a0606">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#2a0606">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#3f7a54">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#5ee08a">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#050806"></i><i style="background:#5ee08a"></i><i style="background:#3f7a54"></i><i style="background:#ffb000"></i><i style="background:#ff4d4d"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#ffb000">Amber CRT</p>
+    <p class="why">One hue, four brightnesses. A 1980s terminal: no colour coding at all, so the ladder climbs in light. Gentlest on a dark room.</p>
+    <div class="pair">
+      <div class="p" style="background:#0d0a04">
+        <div class="t s2" style="left:9px;top:12px;color:#7a5510">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#ffb000">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#7a5510">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#2e2008"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#ffb000"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#7a5510">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#7a5510">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#ffb000">31%</div>
+      </div>
+      <div class="p" style="background:#0d0a04">
+        <div class="fld pulse" style="top:0;height:124px;background:#ffd24a"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#241800">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#241800">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#241800">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#241800">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#7a5510">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#ffb000">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0d0a04"></i><i style="background:#ffb000"></i><i style="background:#7a5510"></i><i style="background:#ffd24a"></i><i style="background:#fff0c0"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#5ec8e0">Ice</p>
+    <p class="why">Cold steel HUD. Cyan is the calmest colour at a glance, which makes the amber and red jumps read further away.</p>
+    <div class="pair">
+      <div class="p" style="background:#0b1114">
+        <div class="t s2" style="left:9px;top:12px;color:#4a7d8c">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#e6f4f7">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#4a7d8c">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#143038"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#5ec8e0"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#4a7d8c">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#4a7d8c">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#e6f4f7">31%</div>
+      </div>
+      <div class="p" style="background:#0b1114">
+        <div class="fld pulse" style="top:0;height:124px;background:#ff5c7a"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#2a0a12">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#2a0a12">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#2a0a12">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#2a0a12">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#4a7d8c">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#e6f4f7">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0b1114"></i><i style="background:#e6f4f7"></i><i style="background:#5ec8e0"></i><i style="background:#ffc34a"></i><i style="background:#ff5c7a"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#3d3929">Paper</p>
+    <p class="why">The one light palette, kept for bright rooms. The alarm inverts to a flooded field the same way, just dark ink on colour.</p>
+    <div class="pair">
+      <div class="p" style="background:#f0eee6">
+        <div class="t s2" style="left:9px;top:12px;color:#6b6759">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#3d3929">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#6b6759">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#e6d6ce"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#a8442a"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#6b6759">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#6b6759">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#3d3929">31%</div>
+      </div>
+      <div class="p" style="background:#f0eee6">
+        <div class="fld pulse" style="top:0;height:124px;background:#a82a2a"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#f6e9e6">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#ffffff">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#f6e9e6">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#f6e9e6">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#6b6759">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#3d3929">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#f0eee6"></i><i style="background:#3d3929"></i><i style="background:#a8442a"></i><i style="background:#8a5a00"></i><i style="background:#a82a2a"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#c8c6bf">Mono</p>
+    <p class="why">No hue anywhere. Proof the ladder never depended on colour: calm is grey, critical is a white field. Also the safest on an always-on AMOLED.</p>
+    <div class="pair">
+      <div class="p" style="background:#0a0a0a">
+        <div class="t s2" style="left:9px;top:12px;color:#6a6a68">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#e8e8e4">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#6a6a68">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#2a2a29"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#9a9a96"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#6a6a68">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#6a6a68">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#e8e8e4">31%</div>
+      </div>
+      <div class="p" style="background:#0a0a0a">
+        <div class="fld pulse" style="top:0;height:124px;background:#f2f2ee"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#101010">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#101010">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#101010">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#101010">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#6a6a68">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#e8e8e4">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0a0a0a"></i><i style="background:#e8e8e4"></i><i style="background:#9a9a96"></i><i style="background:#c8c6bf"></i><i style="background:#f2f2ee"></i></div>
+  </div>
+
+
+  <div class="theme">
+    <p class="name" style="color:#f2a6c0">Sakura</p>
+    <p class="why">Cute without being weak. Soft petal ground, deep plum ink. The alarm is a hot rose, so it still lands like an alarm.</p>
+    <div class="pair">
+      <div class="p" style="background:#1c1318">
+        <div class="t s2" style="left:9px;top:12px;color:#8c6b78">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#fdeef4">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#8c6b78">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#3d2430"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#f2a6c0"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#8c6b78">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#8c6b78">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#fdeef4">31%</div>
+      </div>
+      <div class="p" style="background:#1c1318">
+        <div class="fld pulse" style="top:0;height:124px;background:#ff5d8f"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#33101f">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#33101f">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#33101f">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#33101f">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#8c6b78">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#fdeef4">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#1c1318"></i><i style="background:#fdeef4"></i><i style="background:#f2a6c0"></i><i style="background:#ffc46b"></i><i style="background:#ff5d8f"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#ff4fd8">Neon Noir</p>
+    <p class="why">Sexy. Magenta and cyan on ink, the rain-slicked city look. Two hues pull hard against each other, so the flood is unmistakable.</p>
+    <div class="pair">
+      <div class="p" style="background:#0e0a16">
+        <div class="t s2" style="left:9px;top:12px;color:#7a5f96">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#eae2ff">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#7a5f96">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#33143a"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#ff4fd8"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#7a5f96">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#7a5f96">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#eae2ff">31%</div>
+      </div>
+      <div class="p" style="background:#0e0a16">
+        <div class="fld pulse" style="top:0;height:124px;background:#ff2b5e"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#2a0512">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#2a0512">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#2a0512">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#2a0512">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#7a5f96">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#eae2ff">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0e0a16"></i><i style="background:#eae2ff"></i><i style="background:#ff4fd8"></i><i style="background:#38e0ff"></i><i style="background:#ff2b5e"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#7fb2ff">Blueprint</p>
+    <p class="why">Nerdy and precise. Drafting cyan on navy, the colour of a plan being checked. Reads as measurement rather than decoration.</p>
+    <div class="pair">
+      <div class="p" style="background:#0a1428">
+        <div class="t s2" style="left:9px;top:12px;color:#4f7099">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#dceaff">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#4f7099">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#14294a"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#7fb2ff"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#4f7099">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#4f7099">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#dceaff">31%</div>
+      </div>
+      <div class="p" style="background:#0a1428">
+        <div class="fld pulse" style="top:0;height:124px;background:#ff7a45"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#2a1005">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#2a1005">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#2a1005">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#2a1005">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#4f7099">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#dceaff">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0a1428"></i><i style="background:#dceaff"></i><i style="background:#7fb2ff"></i><i style="background:#ffd27f"></i><i style="background:#ff7a45"></i></div>
+  </div>
+
+  <div class="theme">
+    <p class="name" style="color:#9bbc0f">Handheld</p>
+    <p class="why">Four greens and nothing else, the 1989 pocket LCD. The nerdiest option in the set and the only one that is genuinely four colours deep.</p>
+    <div class="pair">
+      <div class="p" style="background:#0f380f">
+        <div class="t s2" style="left:9px;top:12px;color:#306230">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#9bbc0f">63</div>
+        <div class="t s4" style="left:105px;top:60px;color:#306230">%</div>
+        <div class="bar" style="left:9px;top:112px;width:154px;height:12px;background:#1d4d1d"></div>
+        <div class="bar" style="left:9px;top:112px;width:97px;height:12px;background:#8bac0f"></div>
+        <div class="t s1" style="left:9px;top:134px;color:#306230">2h 14m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#306230">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#9bbc0f">31%</div>
+      </div>
+      <div class="p" style="background:#0f380f">
+        <div class="fld pulse" style="top:0;height:124px;background:#e8f0b0"></div>
+        <div class="t s2" style="left:9px;top:12px;color:#0f380f">SESSION</div>
+        <div class="t s8" style="left:9px;top:36px;color:#0f380f">6</div>
+        <div class="t s4" style="left:57px;top:60px;color:#0f380f">%</div>
+        <div class="t s2" style="left:9px;top:98px;color:#0f380f">41m to reset</div>
+        <div class="t s2" style="left:9px;top:162px;color:#306230">WEEKLY</div>
+        <div class="t s4" style="left:9px;top:186px;color:#9bbc0f">31%</div>
+      </div>
+    </div>
+    <div class="sw"><i style="background:#0f380f"></i><i style="background:#9bbc0f"></i><i style="background:#8bac0f"></i><i style="background:#306230"></i><i style="background:#e8f0b0"></i></div>
+  </div>
+
+</div>
