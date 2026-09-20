@@ -5015,9 +5015,19 @@ static void handleSettingsPage() {
          "<p class=muted style='margin:0 0 12px'>Sideways suits the wide "
          "screens: Micro fills the glass either way, and the rest are drawn "
          "for an upright panel and will letterbox.</p>"
-         "<label>Theme</label>"
-         "<p class=muted style='margin:0 0 8px'>A theme is a palette and a "
-         "layout. The readout screen is drawn a different way in each.</p>"
+         "<label>Theme</label>");
+  s += screenEnabled(SCREEN_MICRO)
+      ? F("<p class=muted style='margin:0 0 8px'>A theme is a palette "
+          "<b>and</b> a layout. The palette recolours every screen; the layout "
+          "is what <b>Micro</b> is drawn in, which is where these previews "
+          "come from. Saving a new one takes the board to it.</p>")
+      : F("<p class=muted style='margin:0 0 8px;background:#fbeee8;"
+          "border-radius:10px;padding:10px 12px'>A theme is a palette "
+          "<b>and</b> a layout, but <b>Micro is switched off</b> on this "
+          "board &mdash; and Micro is the only screen that draws the layout. "
+          "Switch it on below and these previews become what you see; leave "
+          "it off and a theme is a recolour.</p>");
+  s += F(
          "<div class=themes id=theme>");
   // Radios rather than a dropdown, because the point is seeing them. Each
   // carries a miniature of the layout it selects.
@@ -5129,6 +5139,11 @@ static void handleSettingsSave() {
     if (t != uiTheme) {
       applyTheme(t);
       prefs.putInt("theme", uiTheme);   // inside the open prefs transaction
+      // A theme is a palette and a layout, and only one screen draws the
+      // layout. Picking one from a page of thirteen layout previews and being
+      // left on Meters shows you the half that did not change -- so the board
+      // moves to the screen the choice was about.
+      if (screenEnabled(SCREEN_MICRO)) uiScreen = SCREEN_MICRO;
     }
   }
   if (server->hasArg("avatar")) {
