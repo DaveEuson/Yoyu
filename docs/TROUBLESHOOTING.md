@@ -71,12 +71,14 @@ A fresh flash starts clean, so it will ask for Wi-Fi again and want pairing if
 you use self-hosted mode. The companion finds it again on its own once it is
 back on the network.
 
-### How to tell the two boards apart
+### How to tell the boards apart
 
-The 2" LCD board is the smaller rectangular one, 240×320. The AMOLED is 2.16"
-and square, 480×480. If you are unsure which a given board is, and it is on
-the network, `board` in `/api/status` reports what its firmware believes,
-and `id` is permanent and printed at the bottom of the page the board serves.
+The 2" LCD board is the rectangular one, 240×320. The AMOLED is 2.16" and
+square, 480×480. The C6 is the narrow one, 1.47" and 172×320, and it is the
+only one with a colour LED under the acrylic. If you are unsure which a given
+board is, and it is on the network, `board` in `/api/status` reports what its
+firmware believes, and `id` is permanent and printed at the bottom of the page
+the board serves.
 
 ---
 

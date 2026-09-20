@@ -69,11 +69,11 @@ jobs:
                      --jq .tagName 2>/dev/null || echo "")
           echo "bundling firmware from release: ${before:-<none>}"
           missing=0
-          # Both boards. The setup page's board picker points esp-web-tools at
-          # one manifest or the other, and a manifest whose parts were never
+          # Every board. The setup page's board picker points esp-web-tools at
+          # one manifest or another, and a manifest whose parts were never
           # bundled 404s at Install time -- which looks to the buyer like the
           # board itself is broken. Whatever the picker can offer has to be here.
-          for pfx in headroom-mini yoyu-amoled; do
+          for pfx in headroom-mini yoyu-amoled yoyu-c6lcd147; do
             for part in bootloader partitions boot_app0 app; do
               f="$pfx-$part.bin"
               curl -fsSL -o "docs/firmware/$f" "$base/$f" || {
@@ -109,9 +109,9 @@ jobs:
           # The flasher must install exactly what the release ships; a mismatch
           # here is the silent failure that shipped with v1.5.0.
           # Checked per board: one correct image is no evidence about the
-          # other, and the two are byte-for-byte different builds of the same
+          # others, and they are byte-for-byte different builds of the same
           # version.
-          for pfx in headroom-mini yoyu-amoled; do
+          for pfx in headroom-mini yoyu-amoled yoyu-c6lcd147; do
             curl -fsSL -o "/tmp/$pfx-release-app.bin" "$base/$pfx-app.bin"
             a=$(sha256sum "docs/firmware/$pfx-app.bin" | cut -d' ' -f1)
             b=$(sha256sum "/tmp/$pfx-release-app.bin" | cut -d' ' -f1)
