@@ -1,7 +1,7 @@
 # Release checklist
 
 How to cut a Yoyu release. Tags drive everything: pushing `vX.Y.Z` builds
-the companion apps **and** the Mini firmware image and attaches them to a
+the companion apps **and** every board's firmware image and attaches them to a
 GitHub Release; the setup page + companion download links always point at
 `releases/latest`.
 
@@ -10,7 +10,7 @@ GitHub Release; the setup page + companion download links always point at
 | Workflow | Trigger | Produces |
 |---|---|---|
 | `firmware.yml` | push/PR touching `firmware/**` | compile-check + firmware artifacts (CI gate) |
-| `release.yml` | push tag `v*` | `YoyuCompanion-{windows.exe,macos,linux}` + a merged image and a signed OTA `app.bin.sig` **for each board** (`headroom-mini-*`, `yoyu-amoled-*`), attached to the Release |
+| `release.yml` | push tag `v*` | `YoyuCompanion-{windows.exe,macos,linux}` + a merged image and a signed OTA `app.bin.sig` **for each board** (`headroom-mini-*`, `yoyu-amoled-*`, `yoyu-c6lcd147-*`), attached to the Release |
 | `pages.yml` | push to `main` touching `docs/**`, **and after `release.yml` completes** | deploys the setup/flasher page to GitHub Pages, bundling `releases/latest`'s firmware same-origin |
 
 `pages.yml` is the only workflow that deploys Pages. It also refuses to publish
@@ -19,11 +19,17 @@ the page serving the previous version because two workflows deployed the site
 from two different sources and the stale one landed last, with both runs green.
 
 Fixed URLs the site depends on (resolve once a Release exists):
-- Flasher images, per board: `.../releases/latest/download/{headroom-mini,yoyu-amoled}-{bootloader,partitions,boot_app0,app}.bin`
-  — the setup page's board picker chooses between `docs/firmware/manifest.json`
-  and `manifest-amoled216.json`, and `pages.yml` bundles **both** sets. A board
-  the picker can offer whose parts were never bundled 404s at Install time,
-  which looks like a broken board rather than a broken deploy.
+- Flasher images, per board: `.../releases/latest/download/{headroom-mini,yoyu-amoled,yoyu-c6lcd147}-{bootloader,partitions,boot_app0,app}.bin`
+  — the setup page's board picker chooses between `docs/firmware/manifest.json`,
+  `manifest-amoled216.json` and `manifest-c6lcd147.json`, and `pages.yml`
+  bundles **all three** sets. A board the picker can offer whose parts were
+  never bundled 404s at Install time, which looks like a broken board rather
+  than a broken deploy.
+  — adding a board means a fourth manifest, a fourth `assemble` call in
+  `release.yml` (**with its chip family** — the C6 is not an S3, and a merged
+  image built for the wrong chip is signed, published and unbootable), its
+  prefix in the signing loop, the asset-presence list, and both loops in
+  `pages.yml`.
 - Companion: `.../releases/latest/download/YoyuCompanion-{windows.exe,macos,linux}`
 - Setup page: `https://daveeuson.github.io/Yoyu/`
 
