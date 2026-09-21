@@ -65,22 +65,9 @@ more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 > and the board turns off -- so nothing is bound to it. Everything else is
 > configured from a browser.
 >
-> This is **not** a Yoyu bug. Waveshare's own driver, built from their own
-> example library and run on the same board with their own pin definitions,
-> behaves identically. No touch reported, and the controller's interrupt line
-> never asserts once across 40 seconds of pressing. An interrupt is the
-> controller's own response to detecting a finger and happens before any driver
-> reads a register, so the controller is not sensing the panel at all. Every
-> software check passes: right part (`0x9220`), real firmware, valid check
-> code, correct resolution, mode unlock confirmed.
->
-> The schematic rules out the wiring. Display and touch share one 24-pin FPC at
-> `J40`, the display works through it, and the touch controller answers on I²C
-> through it, so the connector is seated and conducting. Neither the CST9220
-> nor the CO5300 is on the mainboard schematic, so both are bonded to the panel
-> module. The dead link is between the controller and the sensing grid, inside
-> that module. **It is a faulty panel, not a repair and not a driver change.**
-> [Details](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
+> It is a fault in the panel module, not in Yoyu: Waveshare's own touch driver
+> behaves identically on the same board, and neither reflashing nor reseating
+> the connector is expected to help. [Why, in detail](docs/TROUBLESHOOTING.md#touch-does-nothing-on-the-amoled-board)
 
 **[Waveshare ESP32-C6-LCD-1.47](https://www.waveshare.com/esp32-c6-lcd-1.47.htm)**
 1.47", 172×320, about $20. The cheapest way in. A narrow panel is no place for
