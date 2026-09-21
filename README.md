@@ -109,27 +109,27 @@ No tools, no command line:
    same USB cable (Improv). No hotspot, no typing an address.
 3. **See your usage.** Download the companion app from that page and open it.
    It finds the board on your network and feeds it your real usage, or you can
-   make the board self-contained (below).
+   pair the board so it fetches your usage itself (below).
 4. **Install it, if you want it permanent.** Run it once with `--install`, or
    pick **Install on this computer** from the tray menu. That copies the app
    somewhere stable, adds it to your applications menu, and offers to start it
    when you log in. Without this it runs from wherever you downloaded it, and
    emptying that folder stops it coming back.
 
-## Running two
+## Running more than one
 
-Both boards on one network is a supported setup, not a workaround. The
+Several boards on one network is a supported setup, not a workaround. The
 companion finds every board and feeds them all from a single read of your
 usage, and the tray gives each one its own submenu.
 
 Two things are per board rather than shared: **pairing** (each holds its own
 top-up key, so pair each one you want to run without this computer) and
-**`yoyu.local`**, which only ever names one of them. The second board to start
-comes up as `yoyu-2.local`, and that assignment swaps when they reboot
-together. Each board prints its own permanent id at the bottom of the
+**`yoyu.local`**, which only ever names one of them. The others come up as
+`yoyu-2.local`, `yoyu-3.local` and so on, in the order they start, and those
+names can swap when they reboot together. Each board prints its own permanent id at the bottom of the
 page it serves at its own address.
 
-If you add a second board later you do not have to do anything. A running
+If you add another board later you do not have to do anything. A running
 companion looks for boards it has not seen every 15 minutes, picks up anything
 new, and says so. `--rescan` and the tray's **Look for boards** still force it
 if you would rather not wait. Set `rescan_secs` in the config to change the
@@ -151,12 +151,15 @@ the command line, `companion.py --disconnect`.
   and forget: it auto-finds the board and starts with your computer. (It never
   does a fresh sign-in, so it avoids the throttle that blocks third-party
   logins.)
-- **Self-contained (no computer).** Run the companion once with `--pair`; the
-  board shows a short confirmation code on its screen, you type it in, and only
-  then does it take your login, so the token goes to the physical device in
-  front of you and not to whatever answered first on the network. The board then
-  polls Anthropic directly and refreshes its own token, with nothing running on
-  your computer afterward.
+- **Paired (the board fetches its own).** Run the companion once with
+  `--pair`; the board shows a short confirmation code on its screen, you type it
+  in, and only then does it take your login, so the token goes to the physical
+  device in front of you and not to whatever answered first on the network. The
+  board then reads Anthropic itself instead of waiting to be sent your numbers.
+  It still needs your computer now and then: the token it holds is short-lived
+  and it deliberately cannot renew it, so the companion tops it up while the
+  computer is on. Leave the computer off for more than a few hours and the board
+  shows **waiting for your computer** until it is back.
 
 ## What it does
 
@@ -173,7 +176,7 @@ the command line, `companion.py --disconnect`.
   The money goes where the percentage does, plus a phone alert the first time a
   period tips over. It only appears when credits are actually being spent;
   having them available is a fact about your account, not about today.
-- **Ten screens**, cycled by a tap or on a timer: meters, micro, focus, pace,
+- **Ten screens**, cycled by a tap, the AMOLED's keys, or a timer: meters, micro, focus, pace,
   history, your character, a timer, actions, projects and settings. The setup
   page shows each one and what it is for, so you can pick them before the
   board is even on your desk, and any of them can be switched off later.
@@ -247,7 +250,10 @@ Full guide: [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md). The common one
   [`companion/README.md`](companion/README.md).
 - **`docs/`** holds the browser-flasher setup page (served by GitHub Pages), the
   [troubleshooting guide](docs/TROUBLESHOOTING.md), and the release checklist
-  ([`docs/RELEASE.md`](docs/RELEASE.md)).
+  ([`docs/RELEASE.md`](docs/RELEASE.md)). Everything in it is public.
+- **`design/`** holds the browser mock-ups the screens were designed in, and
+  the script that draws this README's pictures from them. See
+  [`design/README.md`](design/README.md).
 
 ## Build from source (developers only)
 
