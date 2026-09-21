@@ -498,6 +498,10 @@ static bool touchOk = false;
 // panel inventing presses, which is indistinguishable from a person changing
 // settings until you can see the count.
 static uint32_t touchEvents = 0;
+// Presses of the board's keys that were acted on. Beside the raw key levels in
+// /api/status, it tells a key that is not wired where we think from one that
+// is wired and ignored.
+static uint32_t keyPresses = 0;
 
 static const char *resetReasonName() {
   switch (bootReason) {
@@ -594,7 +598,7 @@ static String   pushToken;            // optional shared secret; when set, the
 static char     pollStatus[48] = "";  // last on-device poll result (shown when no data)
 
 // UI / input state (Phase 1.5)
-static const int BOOT_BTN    = 0;     // BOOT button -> hold to factory reset
+static const int BOOT_BTN    = BOOT_PIN; // BOOT: hold to factory reset
 #if HAS_BATTERY_ADC
 static const int BAT_ADC_PIN = VBAT_PIN;  // via the onboard divider (x3)
 #endif
@@ -736,6 +740,12 @@ static int       rotateSecs  = 0;     // 0 = tap-only; else auto-rotate every N 
 static unsigned long lastUserTouch = 0;  // for pausing auto-rotate after a tap
 static bool screenEnabled(int i) { return screenMask & (1 << i); }
 
+// Whether a person can change the screen by hand at all: by touch, or with
+// the keys on a board that has them. It is the question auto-rotate "off"
+// actually depends on -- asked as "is there touch" it stranded the AMOLED on
+// a timer long after it had keys that could drive it.
+#define CAN_STEER_BY_HAND (HAS_TOUCH_INPUT || HAS_BUTTONS)
+
 // Meters, Focus and Micro draw headroom through the theme's layout; the rest
 // do not. Asked by the pulse, and by the settings page when it decides whether
 // changing a theme is already visible from where you are standing.
@@ -750,7 +760,7 @@ static bool drawsReadout(int i) {
 // rotate to and the choice is deliberate.
 static const int NO_TOUCH_ROTATE = 20;   // seconds, when 0 is not an option
 static int clampRotate(int secs, uint16_t mask) {
-#if HAS_TOUCH_INPUT
+#if CAN_STEER_BY_HAND
   (void)mask;
   return secs;
 #else
@@ -3279,6 +3289,16 @@ static void handleStatus() {
   doc["touch_ok"] = touchOk;             // the chip answered and initialised
   doc["touch_input"] = (bool)HAS_TOUCH_INPUT;   // ...and presses actually arrive
   doc["touch_events"] = touchEvents;     // reported presses, acted on or not
+#if HAS_BUTTONS
+  // Each key's live level, as pressed/not. How the wiring was confirmed
+  // before anything was bound to it, and still the fastest way to tell a
+  // dead key from an ignored one.
+  JsonObject k = doc["keys"].to<JsonObject>();
+  k["prev"] = digitalRead(BTN_PREV_PIN) == LOW;
+  k["pwr"]  = digitalRead(BTN_PWR_PIN) == HIGH;
+  k["next"] = digitalRead(BOOT_BTN) == LOW;
+  doc["key_presses"] = keyPresses;
+#endif
   // Seconds since that reset. Free, and it is what makes a restart visible
   // between two polls without having to catch the board while it is down.
   doc["uptime_s"] = (uint32_t)(millis() / 1000);
@@ -4974,17 +4994,20 @@ static void handleSettingsPage() {
     s += ROT_OPTS[i];
     if (ROT_OPTS[i] == pickRotate) s += " selected";
     s += ">";
-#if !HAS_TOUCH_INPUT
-    // Offering "off" on a board with no touch is offering a trap.
+#if !CAN_STEER_BY_HAND
+    // Offering "off" on a board nobody can steer is offering a trap.
     if (ROT_OPTS[i] == 0) continue;
 #endif
-    if (ROT_OPTS[i] == 0) s += "Off (tap only)";
+    if (ROT_OPTS[i] == 0) s += HAS_TOUCH_INPUT ? "Off (tap only)" : "Off (use the keys)";
     else { s += "Every "; s += ROT_OPTS[i]; s += "s"; }
     s += "</option>";
   }
-#if !HAS_TOUCH_INPUT
+#if !CAN_STEER_BY_HAND
   s += F("<p class=muted style='margin:-8px 0 12px'>This board has no touch, "
          "so the screens have to change on their own.</p>");
+#elif !HAS_TOUCH_INPUT
+  s += F("<p class=muted style='margin:-8px 0 12px'>No touch on this board: "
+         "the left key goes back a screen and BOOT goes forward.</p>");
 #endif
   s += F("</select><label>Orientation</label><select name=orient>");
   static const char *ORIENTS[4] = {"Upright", "Sideways (clockwise)",
@@ -5767,6 +5790,42 @@ static void cycleScreen(int dir) {
   drawScreen();
 }
 
+#if HAS_BUTTONS
+// A key does what a tap does: wake a dimmed screen first, otherwise move one
+// screen, and hold off auto-rotate so the screen you chose stays put.
+static void onKey(int dir) {
+  keyPresses++;
+  lastUserTouch = millis();
+  if (screenOff) { wake(); return; }
+  cycleScreen(dir);
+}
+
+// Acted on at release, and only for a press between 30 ms (shorter is contact
+// bounce) and one second. BOOT held for five seconds is still the factory
+// reset, and a press that long is someone doing that rather than asking for
+// the next screen. Acting on release also means a pin stuck at either level
+// produces at most one event rather than a stream of them.
+static void pollKey(int pin, bool &down, unsigned long &at, int dir) {
+  bool now = digitalRead(pin) == LOW;       // both bound keys pull to ground
+  unsigned long t = millis();
+  if (now && !down) {
+    down = true;
+    at = t;
+  } else if (!now && down) {
+    down = false;
+    unsigned long held = t - at;
+    if (held >= 30 && held < 1000) onKey(dir);
+  }
+}
+
+static void pollButtons() {
+  static bool prevDown = false, nextDown = false;
+  static unsigned long prevAt = 0, nextAt = 0;
+  pollKey(BTN_PREV_PIN, prevDown, prevAt, -1);
+  pollKey(BOOT_BTN, nextDown, nextAt, +1);
+}
+#endif
+
 static void bumpBrightness(int d) {
   int v = (int)backlight + d;
   if (v < 25) v = 25;
@@ -5991,6 +6050,12 @@ void setup() {
   Serial.begin(115200);
   bootReason = esp_reset_reason();
   pinMode(BOOT_BTN, INPUT_PULLUP);   // hold 5s -> factory reset Wi-Fi
+#if HAS_BUTTONS
+  pinMode(BTN_PREV_PIN, INPUT_PULLUP);  // a key to ground
+  // Read only, for /api/status. An inverter drives this pin both ways, so no
+  // pull of our own, and nothing is ever bound to it.
+  pinMode(BTN_PWR_PIN, INPUT);
+#endif
 #if PANEL_HAS_BACKLIGHT
   // Core 3.x attaches the pin and allocates the LEDC channel itself, and
   // ledcWrite takes the pin rather than the channel. ledcSetup/ledcAttachPin
@@ -6058,6 +6123,9 @@ void setup() {
 void loop() {
   improvPoll();                     // browser can provision Wi-Fi over USB
   checkBootButton();                // hold BOOT 5s -> factory reset
+#if HAS_BUTTONS
+  pollButtons();                    // IO18 back a screen, BOOT forward
+#endif
   if (server) server->handleClient();
   if (apMode) {
     dns.processNextRequest();
