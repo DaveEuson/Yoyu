@@ -59,9 +59,11 @@ panel first, and touch works.
 starts on the dimmer theme and draws the same layout bigger instead of fitting
 more in. It boots, joins Wi-Fi, shows every screen and reads your usage.
 
-> **Touch does not work on the unit I have.** The screen is a display, not a
-> control: screens rotate on their own and everything else is configured from a
-> browser, but you cannot tap it.
+> **Touch does not work on the unit I have.** You cannot tap the screen, but
+> the keys on its edge step through the screens: the left one goes back and
+> BOOT goes forward. PWR, between them, is the board's power switch -- hold it
+> and the board turns off -- so nothing is bound to it. Everything else is
+> configured from a browser.
 >
 > This is **not** a Yoyu bug. Waveshare's own driver, built from their own
 > example library and run on the same board with their own pin definitions,
@@ -193,8 +195,8 @@ is what makes thirteen themes out of ten.</sub></p>
 
 - **Touch & motion.** Tap to cycle screens, long-press to flip % left / %
   used, swipe for brightness; flip it face-down to sleep, shake to wake.
-  (2" LCD board only. The AMOLED's touch does not work and the C6 has none, so
-  on those the screens change on a timer.)
+  (2" LCD board only. The AMOLED's touch does not work, so its edge keys step
+  through the screens instead; the C6 has neither, so it changes on a timer.)
 - **Battery gauge** from the LiPo header.
 - **Phone alerts** via ntfy or Pushover when a window crosses a threshold, with
   a recovery notice. There's also one the first time a period starts spending

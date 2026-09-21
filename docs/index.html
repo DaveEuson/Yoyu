@@ -461,9 +461,9 @@
           <p class="why">Square and brighter, with true black, so the same
             layout is drawn bigger instead of denser.</p>
           <span class="warn"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6.4"/><path d="M8 4.9v3.6"/><path d="M8 11.1h.01"/></svg>
-            <span><strong>Touch doesn't work on this one yet.</strong> It's a
-            display, not a control. Screens rotate on their own and everything
-            else is set from a browser.</span></span>
+            <span><strong>Touch doesn't work on this one yet.</strong> The
+            keys on its edge step through the screens instead: the left one goes
+            back, BOOT goes forward. Everything else is set from a browser.</span></span>
         </button>
         <p class="links">
           <a class="nb" href="https://www.waveshare.com/esp32-s3-touch-amoled-2.16.htm">Waveshare</a>
@@ -848,9 +848,11 @@
     <p class="touch-only"><strong>On the board:</strong> tap to change screens,
       long-press to flip between &ldquo;% left&rdquo; and &ldquo;% used,&rdquo;
       swipe to change brightness, and lay it face down to sleep.</p>
-    <p class="notouch-only"><strong>On this board:</strong> the screens rotate on
-      their own, because there is no touch you can use. Leave auto-rotate on and
-      use the browser for the rest.</p>
+    <p class="notouch-only"><strong>On this board:</strong> there is no touch
+      you can use.<span class="amoled-only"> The keys on its edge step through
+      the screens: the left one goes back, BOOT goes forward. Hold PWR and the
+      board switches off, so leave that one alone.</span> Otherwise leave
+      auto-rotate on and use the browser for the rest.</p>
     <p><strong>Everything else lives in a browser</strong>, at the address the
       board shows on screen: <code>/settings</code> for screens, theme,
       character and clock, <code>/alerts</code> for phone notifications, and

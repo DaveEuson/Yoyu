@@ -53,6 +53,9 @@
 // reports a press. Auto-rotate leans on this, because "off" on a board nobody
 // can tap is a screen there is no way to leave.
 #define HAS_TOUCH_INPUT   1
+// BOOT differs by chip family: GPIO0 on the S3, GPIO9 on the C6.
+#define BOOT_PIN          0
+#define HAS_BUTTONS       0      // touch does the work here
 #define TOUCH_INT         GFX_NOT_DEFINED
 #define TOUCH_RST         GFX_NOT_DEFINED
 
@@ -136,6 +139,16 @@
 // reports a press. Auto-rotate leans on this, because "off" on a board nobody
 // can tap is a screen there is no way to leave.
 #define HAS_TOUCH_INPUT   0    // CST9220 answers, never reports a press
+#define BOOT_PIN          0
+// Three keys along the edge. IO18 on the left goes back a screen and BOOT on
+// the right goes forward. PWR in the middle is also the AXP2101's power-on
+// gate -- holding it four seconds cuts the power in hardware -- so nothing is
+// bound to it. Pins from a third-party board file for this exact board, then
+// confirmed on the hardware by reading them in /api/status before anything
+// was bound to them.
+#define HAS_BUTTONS       1
+#define BTN_PREV_PIN      18     // IO18, a key to ground
+#define BTN_PWR_PIN       16     // PWR, active high through a BSS138 inverter
 
 // This board has no battery divider on an ADC pin, and looking for one was
 // the wrong question: it carries an AXP2101 power-management chip that already
@@ -219,6 +232,10 @@
 // reports a press. Auto-rotate leans on this, because "off" on a board nobody
 // can tap is a screen there is no way to leave.
 #define HAS_TOUCH_INPUT   0    // no touch hardware at all
+// GPIO9 is the C6's BOOT strap. The firmware read GPIO0 here for as long as
+// the C6 has existed, so the five-second factory reset never worked on it.
+#define BOOT_PIN          9
+#define HAS_BUTTONS       0      // BOOT and RESET only, under the acrylic
 #define TOUCH_RST         GFX_NOT_DEFINED
 
 // The onboard WS2812, under the acrylic. Core 3.x drives one with
