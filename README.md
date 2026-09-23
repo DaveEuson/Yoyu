@@ -185,8 +185,9 @@ is what makes thirteen themes out of ten.</sub></p>
 
 - **Touch & motion.** Tap to cycle screens, long-press to flip % left / %
   used, swipe for brightness; flip it face-down to sleep, shake to wake.
-  (2" LCD board only. The AMOLED's touch does not work, so its edge keys step
-  through the screens instead; the C6 has neither, so it changes on a timer.)
+  (2" LCD board only. The AMOLED's touch does not work, so its edge keys do
+  the same job: a tap steps through the screens, a hold flips % left / % used.
+  The C6 has neither, so it changes on a timer.)
 - **Battery gauge** from the LiPo header.
 - **Phone alerts** via ntfy or Pushover when a window crosses a threshold, with
   a recovery notice. There's also one the first time a period starts spending
