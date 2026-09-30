@@ -4,8 +4,30 @@
     {
       "name": "setup-page",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", "H:/Projects/ClaudeTrackerPi/docs"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8765",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "H:/Projects/ClaudeTrackerPi/docs"
+      ],
       "port": 8765
+    },
+    {
+      "name": "design-mocks",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8766",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "H:/Projects/ClaudeTrackerPi/design"
+      ],
+      "port": 8766
     }
   ]
 }

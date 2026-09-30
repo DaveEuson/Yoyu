@@ -190,15 +190,18 @@ static uint16_t C_ACC, C_ACC_T, C_WARN, C_WARN_T, C_CRIT, C_CRIT_T;
 enum { THEME_NIGHT = 0, THEME_DIM, THEME_PAPER, THEME_MONO,
        THEME_NORD, THEME_TOKYO,
        THEME_TACTICAL, THEME_CRT, THEME_ICE, THEME_SAKURA,
-       THEME_NOIR, THEME_BLUEPRINT, THEME_HANDHELD, THEME_COUNT };
+       THEME_NOIR, THEME_BLUEPRINT, THEME_HANDHELD,
+       THEME_HAZARD, THEME_VU, THEME_COUNT };
 
 // Which layout each theme draws its readout in. Several share Codec: a
 // palette swap is a theme too, and Nord and Tokyo Night were always that.
 enum { RO_CODEC = 0, RO_TACTICAL, RO_CRT, RO_ICE, RO_PAPER, RO_MONO,
-       RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD };
+       RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD,
+       RO_HAZARD, RO_VU };
 static const uint8_t THEME_READOUT[THEME_COUNT] = {
   RO_CODEC, RO_CODEC, RO_PAPER, RO_MONO, RO_CODEC, RO_CODEC,
-  RO_TACTICAL, RO_CRT, RO_ICE, RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD};
+  RO_TACTICAL, RO_CRT, RO_ICE, RO_SAKURA, RO_NOIR, RO_BLUEPRINT, RO_HANDHELD,
+  RO_HAZARD, RO_VU};
 
 // A light ground needs knocked-out text where a dark one needs ink, and two of
 // these are light. C_KNOCK is whatever reads on a flooded accent field.
@@ -206,7 +209,7 @@ static uint16_t C_KNOCK;
 static const char *const THEME_NAMES[THEME_COUNT] = {
     "Night", "Dim", "Paper", "Mono", "Nord", "Tokyo Night",
     "Tactical", "Amber CRT", "Ice", "Sakura", "Neon Noir", "Blueprint",
-    "Handheld"};
+    "Handheld", "Hazard", "Hi-Fi"};
 static int uiTheme = -1;           // -1 = not applied yet
 
 // For the settings page's previews. Same palettes as applyTheme(), written the
@@ -225,7 +228,9 @@ static const ThemeCss THEME_CSS[THEME_COUNT] = {
   {"#1c1318","#fdeef4","#8c6b78","#f2a6c0","#3d2430","#ff5d8f"},  // Sakura
   {"#0e0a16","#eae2ff","#7a5f96","#ff4fd8","#33143a","#ff2b5e"},  // Neon Noir
   {"#0a1428","#dceaff","#4f7099","#7fb2ff","#14294a","#ff7a45"},  // Blueprint
-  {"#9bbc0f","#0f380f","#306230","#0f380f","#8bac0f","#0f380f"}}; // Handheld
+  {"#9bbc0f","#0f380f","#306230","#0f380f","#8bac0f","#0f380f"},  // Handheld
+  {"#e8c014","#14130c","#6b5c12","#14130c","#c2a012","#8e1410"},  // Hazard
+  {"#e9e2d0","#211e18","#7a7262","#211e18","#cbc2ae","#a81c14"}}; // Hi-Fi
 
 static void applyTheme(int t) {
   if (t < 0 || t >= THEME_COUNT) t = THEME_NIGHT;
@@ -361,6 +366,25 @@ static void applyTheme(int t) {
       C_WARN  = RGB565(0x30, 0x62, 0x30); C_WARN_T= RGB565(0x8B, 0xAC, 0x0F);
       C_CRIT  = RGB565(0x0F, 0x38, 0x0F); C_CRIT_T= RGB565(0x8B, 0xAC, 0x0F);
       C_KNOCK = RGB565(0x9B, 0xBC, 0x0F);
+      break;
+    case THEME_HAZARD:
+      // An industrial warning plate. Black on safety yellow, another light
+      // ground, so the knockout swaps the way Handheld's does.
+      C_BG    = RGB565(0xE8, 0xC0, 0x14); C_INK   = RGB565(0x14, 0x13, 0x0C);
+      C_MUTED = RGB565(0x6B, 0x5C, 0x12);
+      C_ACC   = RGB565(0x14, 0x13, 0x0C); C_ACC_T = RGB565(0xC2, 0xA0, 0x12);
+      C_WARN  = RGB565(0x7A, 0x3B, 0x06); C_WARN_T= RGB565(0xC2, 0xA0, 0x12);
+      C_CRIT  = RGB565(0x8E, 0x14, 0x10); C_CRIT_T= RGB565(0xC2, 0xA0, 0x12);
+      C_KNOCK = RGB565(0xE8, 0xC0, 0x14);
+      break;
+    case THEME_VU:
+      // Seventies hi-fi: cream faceplate, black ink, one red past the line.
+      C_BG    = RGB565(0xE9, 0xE2, 0xD0); C_INK   = RGB565(0x21, 0x1E, 0x18);
+      C_MUTED = RGB565(0x7A, 0x72, 0x62);
+      C_ACC   = RGB565(0x21, 0x1E, 0x18); C_ACC_T = RGB565(0xCB, 0xC2, 0xAE);
+      C_WARN  = RGB565(0x9A, 0x63, 0x10); C_WARN_T= RGB565(0xCB, 0xC2, 0xAE);
+      C_CRIT  = RGB565(0xA8, 0x1C, 0x14); C_CRIT_T= RGB565(0xCB, 0xC2, 0xAE);
+      C_KNOCK = RGB565(0xE9, 0xE2, 0xD0);
       break;
     default:                                  // THEME_NIGHT -- the original
       C_BG    = RGB565(0x26, 0x26, 0x24); C_INK   = RGB565(0xF5, 0xF4, 0xEF);
@@ -640,14 +664,14 @@ static bool      nightDim    = true;  // ease the backlight down overnight
 static const uint8_t NIGHT_LEVEL = 40;
 static int       uiScreen    = 0;     // 0 meters 1 focus 2 history 3 kitsune
                                       // 4 timer 5 actions 6 projects 7 settings
-                                      // 8 pace 9 micro
-static const int UI_SCREENS  = 10;
+                                      // 8 pace 9 micro 10 outlook
+static const int UI_SCREENS  = 11;
 // An index is where a screen is stored, not where it sits in the rotation.
 // defaultScreen and every migration flag below were saved by index, so a new
 // screen is appended rather than inserted, and SCREEN_ORDER says where it goes.
 static const char *SCREEN_NAMES[UI_SCREENS] =
     {"Meters", "Focus", "History", "Yoyu",
-     "Timer", "Actions", "Projects", "Settings", "Pace", "Micro"};
+     "Timer", "Actions", "Projects", "Settings", "Pace", "Micro", "Outlook"};
 // One line each, shown under the checkboxes on the settings page. The setup
 // wizard (docs/index.html) carries the same sentences: change one, change both.
 static const char *SCREEN_DESC[UI_SCREENS] = {
@@ -660,10 +684,12 @@ static const char *SCREEN_DESC[UI_SCREENS] = {
   "Which projects used the most of your session. Needs the companion.",
   "The board's own address, and which screens are in the rotation.",
   "Whether you will run out before each window resets, at your current pace.",
-  "The windows that matter, big, drawn in your theme's own layout."};
-// Pace and Micro sit with the other usage screens rather than after Settings.
-static const uint8_t SCREEN_ORDER[UI_SCREENS] = {0, 9, 1, 8, 2, 3, 4, 5, 6, 7};
-static uint16_t  screenMask  = 0x3FF; // bit i set = screen i is in the rotation
+  "The windows that matter, big, drawn in your theme's own layout.",
+  "One sentence: whether you are going to run out, and when."};
+// Pace, Micro and Outlook sit with the other usage screens rather than after
+// Settings. Outlook follows Pace: the conclusion after the working.
+static const uint8_t SCREEN_ORDER[UI_SCREENS] = {0, 9, 1, 8, 10, 2, 3, 4, 5, 6, 7};
+static uint16_t  screenMask  = 0x7FF; // bit i set = screen i is in the rotation
 // Persisted as "smask16". The original "smask" was one byte, which is why a
 // ninth screen needed a wider type and a migration rather than just a bigger
 // UI_SCREENS. The old key is still written, low byte only, so a board rolled
@@ -675,6 +701,7 @@ static const int SCREEN_PROJECTS = 6;
 static const int SCREEN_SETTINGS = 7;
 static const int SCREEN_PACE     = 8;
 static const int SCREEN_MICRO    = 9;
+static const int SCREEN_OUTLOOK  = 10;
 
 // Quarter turns on top of the orientation the board ships in. Sideways is a
 // real choice rather than a fix: a 172x320 panel on its side is 320x172, which
@@ -1989,6 +2016,77 @@ static void roHandheld(RowInfo *r, int n) {
 // Draw n rows in the current theme's layout, into the band (y0, h). Every
 // screen that shows headroom goes through here, which is what makes a theme
 // look like a decision about the board rather than about one screen.
+// ---- Hazard: an industrial warning plate --------------------------------
+static void roHazard(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  bool flood = a.crit && pulseOn;
+  // Diagonal stripes, top and bottom, drawn as a run of slanted bars. A
+  // hazard plate is unmistakable at a glance, which is the whole idea.
+  int bandH = lh * 3 / 2;
+  for (int b = 0; b < 2; b++) {
+    int by = b ? roH() - bandH : 0;
+    for (int x = -bandH; x < scrW + bandH; x += lh) {
+      for (int k = 0; k < bandH; k++)
+        roFill(x + k, by + k, lh / 2, 1, flood ? C_CRIT : C_INK);
+    }
+  }
+  int y = bandH + lh / 2;
+  roText(a.w->label, pad, y, cap, C_MUTED);
+  y += 8 * cap + lh / 3;
+  int heroH = roH() - y - bandH - lh * 3;
+  uint8_t sz = fitBox(a.pct, scrW - 2 * pad, heroH, 20);
+  roText(a.pct, pad, y + (heroH - 8 * sz) / 2, sz, a.crit ? C_CRIT : C_INK);
+  y = roH() - bandH - lh * 5 / 2;
+  roText(a.crit ? "LOW - ACT NOW" : "REMAINING", pad, y, cap, C_INK);
+  if (n > 1) {
+    char line[32];
+    snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
+    roRight(line, scrW - pad, y, cap, C_MUTED);
+  }
+}
+
+// ---- Hi-Fi: a VU meter with a needle ------------------------------------
+static void roVu(RowInfo *r, int n) {
+  RowInfo &a = r[0];
+  int pad = roPad(), lh = roLine();
+  uint8_t cap = roCap();
+  int faceH = roH() * 5 / 8;
+  int cx = scrW / 2, cy = faceH;                 // the needle pivots offscreen
+  int rad = (scrW / 2) - pad;
+  if (rad > faceH - lh * 2) rad = faceH - lh * 2;
+  roText(a.w->label, pad, lh / 2, cap, C_MUTED);
+  roRight("VU", scrW - pad, lh / 2, cap, C_MUTED);
+  // The scale: eleven ticks over 120 degrees, the last three in the red.
+  for (int k = 0; k <= 10; k++) {
+    float t = (float)k / 10.0f;
+    float ang = (-150.0f + 120.0f * t) * 3.14159265f / 180.0f;
+    int len = (k % 5 == 0) ? lh : lh / 2;
+    int x0 = cx + (int)(cosf(ang) * rad), y0 = cy + (int)(sinf(ang) * rad);
+    int x1 = cx + (int)(cosf(ang) * (rad - len)), y1 = cy + (int)(sinf(ang) * (rad - len));
+    gfx->drawLine(x0, roY0 + y0, x1, roY0 + y1, k >= 8 ? C_CRIT : C_INK);
+  }
+  // The needle reads how much is LEFT, so a full tank swings it right.
+  float t = a.left / 100.0f;
+  float ang = (-150.0f + 120.0f * t) * 3.14159265f / 180.0f;
+  int nx = cx + (int)(cosf(ang) * (rad - lh));
+  int ny = cy + (int)(sinf(ang) * (rad - lh));
+  uint16_t needle = a.crit ? C_CRIT : C_INK;
+  gfx->drawLine(cx, roY0 + cy, nx, roY0 + ny, needle);
+  gfx->drawLine(cx + 1, roY0 + cy, nx, roY0 + ny, needle);
+  roDot(cx, cy, lh / 3, C_INK);
+  int y = faceH + lh / 2;
+  uint8_t sz = fitBox(a.pct, scrW - 2 * pad, roH() - y - lh * 2, 8);
+  roText(a.pct, pad, y, sz, a.crit ? C_CRIT : C_INK);
+  roRight(a.when, scrW - pad, y + 8 * sz - 8 * cap, cap, C_MUTED);
+  if (n > 1) {
+    char line[32];
+    snprintf(line, sizeof(line), "%s %s", r[1].w->label, r[1].pct);
+    roText(line, pad, roH() - lh, cap, C_MUTED);
+  }
+}
+
 static const int RO_MIN_STRUCTURED = 112;  // pixels a fixed-line layout needs
 
 static void drawReadout(RowInfo *rows, int n, int y0, int h) {
@@ -2008,10 +2106,230 @@ static void drawReadout(RowInfo *rows, int n, int y0, int h) {
     case RO_NOIR:      roNoir(rows, n);      break;
     case RO_BLUEPRINT: roBlueprint(rows, n); break;
     case RO_HANDHELD:  roHandheld(rows, n);  break;
+    case RO_HAZARD:    roHazard(rows, n);    break;
+    case RO_VU:        roVu(rows, n);        break;
     default:           roCodec(rows, n);     break;
   }
   roY0 = 0;                                  // the band is not sticky
   roHt = 0;
+}
+
+// ---- Outlook: the conclusion, in a sentence ------------------------------
+//
+// Claude's own usage panel leads with a sentence -- "at this pace you'll run
+// out Thursday morning, before the 5:00 PM reset" -- rather than a number to
+// interpret. Pace shows the working; this screen shows the answer, in the
+// largest type that will hold it.
+
+// "5:00 PM" or "17:00", following the clock format setting.
+static void clockAt(time_t when, char *out, size_t n) {
+  struct tm tm;
+  localtime_r(&when, &tm);
+  if (clock24) {
+    snprintf(out, n, "%d:%02d", tm.tm_hour, tm.tm_min);
+  } else {
+    int h = tm.tm_hour % 12;
+    if (h == 0) h = 12;
+    snprintf(out, n, "%d:%02d %s", h, tm.tm_min, tm.tm_hour < 12 ? "AM" : "PM");
+  }
+}
+
+// "this afternoon", "tomorrow morning", "Thursday morning". A time of day is
+// what someone plans around; a bare clock time makes them work out the day.
+static void whenWords(time_t when, char *out, size_t n) {
+  static const char *PART[4] = {"morning", "afternoon", "evening", "night"};
+  static const char *DAY[7] = {"Sunday", "Monday", "Tuesday", "Wednesday",
+                               "Thursday", "Friday", "Saturday"};
+  time_t now = time(nullptr);
+  struct tm w, t;
+  localtime_r(&when, &w);
+  localtime_r(&now, &t);
+  int part = w.tm_hour < 12 ? 0 : w.tm_hour < 17 ? 1 : w.tm_hour < 21 ? 2 : 3;
+  long days = (long)(w.tm_yday - t.tm_yday);
+  if (w.tm_year != t.tm_year) days = (when - now) / 86400 + 1;   // year rollover
+  if (days <= 0)      snprintf(out, n, "%s", part == 3 ? "tonight" : "this afternoon");
+  else if (days == 1) snprintf(out, n, "tomorrow %s", PART[part]);
+  else if (days < 7)  snprintf(out, n, "%s %s", DAY[w.tm_wday], PART[part]);
+  else                snprintf(out, n, "in %ld days", days);
+  if (days <= 0 && part != 3) snprintf(out, n, "this %s", PART[part]);
+}
+
+// Greedy word wrap at the largest whole size whose lines fit the box. The
+// built-in font is 6x8 and scales in whole steps, so this is arithmetic --
+// and wrapping here rather than letting the library do it is the only way to
+// know how many lines there will be before committing to a size.
+#define OUT_MAXLINES 5
+static uint8_t wrapFit(const char *t, int maxW, int maxH, uint8_t want,
+                       char lines[OUT_MAXLINES][48], int *nOut) {
+  for (uint8_t sz = want; ; sz--) {
+    int cols = maxW / (6 * sz);
+    int lead = 8 * sz + 2 * sz;
+    int n = 0, i = 0, len = (int)strlen(t);
+    bool fits = cols >= 8;               // narrower than this reads as a column
+    while (fits && i < len && n < OUT_MAXLINES) {
+      int take = len - i;
+      if (take > cols) {
+        take = cols;
+        int brk = -1;
+        for (int k = 0; k < take; k++) if (t[i + k] == ' ') brk = k;
+        if (brk > 0) take = brk;            // break on a space, never mid-word
+      }
+      int cut = take;
+      while (cut > 0 && t[i + cut - 1] == ' ') cut--;
+      if (cut > 46) cut = 46;
+      memcpy(lines[n], t + i, cut);
+      lines[n][cut] = 0;
+      n++;
+      i += take;
+      while (i < len && t[i] == ' ') i++;
+    }
+    if (fits && i >= len && n * lead <= maxH) { *nOut = n; return sz; }
+    if (sz == 1) { *nOut = n; return 1; }   // nothing fits; show what we can
+  }
+}
+
+// Largest whole size at which one line fits a width.
+static uint8_t fitLine(const char *t, int maxW, uint8_t want) {
+  int len = (int)strlen(t);
+  if (len < 1) len = 1;
+  while (want > 1 && len * 6 * want > maxW) want--;
+  return want;
+}
+
+// How the estimate was arrived at, said the longest way the panel has room
+// for. This is not decoration: the session is judged on the last hour and the
+// week on its average since it began, and a projection you cannot see the
+// basis of is a number to distrust. Longest first; the narrow panels fall
+// back to the short forms rather than clipping.
+static const char *leadFor(const Window &w, int maxW, uint8_t sz) {
+  static const char *SESSION[] = {"at the rate of the last hour",
+                                  "at the last hour's rate",
+                                  "at this pace"};
+  static const char *WEEKLY[]  = {"at the rate you are working",
+                                  "at your pace this week",
+                                  "at this pace"};
+  const char **opt = !strcmp(w.key, "five_hour") ? SESSION : WEEKLY;
+  for (int i = 0; i < 2; i++)
+    if ((int)strlen(opt[i]) * 6 * sz <= maxW) return opt[i];
+  return opt[2];
+}
+
+// The sentence, typeset rather than wrapped. A paragraph at a size you can
+// read across a desk is eleven characters wide on the 2" panel, which is a
+// column and not a sentence; so the answer gets the big type on its own line
+// and the rest is said around it, which is what Claude's own banner does with
+// weight instead of size.
+static void drawOutlook() {
+  gfx->fillScreen(C_BG);
+  if (nWindows == 0) { drawMeters(); return; }
+
+  // The window that decides the answer: the one running dry soonest, else
+  // one that has already run out, else whichever is most spent.
+  int pick = -1, outIdx = -1;
+  long soonest = 0;
+  PaceInfo pc = {false, false, false, 0, -1, -1, 0, -1};
+  for (int i = 0; i < nWindows; i++) {
+    PaceInfo q = paceFor(windows[i]);
+    if (q.ok && q.out && outIdx < 0) outIdx = i;
+    if (q.ok && !q.out && !q.idle && q.toEmptyMin >= 0 &&
+        q.toEmptyMin < q.toResetMin && (pick < 0 || q.toEmptyMin < soonest)) {
+      pick = i; soonest = q.toEmptyMin; pc = q;
+    }
+  }
+
+  char kicker[40] = "", hero[40] = "", detail[72] = "", when[32], clk[16];
+  const Window *rateWin = nullptr;   // set when a pace, not a fact, is quoted
+  const char *label = nullptr;
+  uint16_t ink = C_INK;
+  long footMin = -1;
+
+  if (pick >= 0) {
+    Window &w = windows[pick];
+    label = w.label;
+    whenWords(time(nullptr) + pc.toEmptyMin * 60, when, sizeof(when));
+    clockAt(w.resets_at, clk, sizeof(clk));
+    snprintf(hero, sizeof(hero), "%s", when);
+    snprintf(detail, sizeof(detail), "you run out, before the %s reset", clk);
+    rateWin = &w;
+    ink = (pc.toResetMin - pc.toEmptyMin) < 60 ? C_CRIT : C_WARN;
+    footMin = pc.toResetMin;
+  } else if (outIdx >= 0) {
+    Window &w = windows[outIdx];
+    label = w.label;
+    whenWords(w.resets_at, when, sizeof(when));
+    clockAt(w.resets_at, clk, sizeof(clk));
+    strlcpy(kicker, "spent", sizeof(kicker));
+    snprintf(hero, sizeof(hero), "%s", when);
+    snprintf(detail, sizeof(detail), "%s comes back, at %s", w.label, clk);
+    ink = C_CRIT;
+    footMin = (long)((w.resets_at - time(nullptr)) / 60);
+  } else {
+    bool anyKnown = false;
+    for (int i = 0; i < nWindows; i++) if (paceFor(windows[i]).ok) anyKnown = true;
+    if (anyKnown) {
+      Window &w = windows[0];
+      label = w.label;
+      clockAt(w.resets_at, clk, sizeof(clk));
+      strlcpy(hero, "room to spare", sizeof(hero));
+      snprintf(detail, sizeof(detail), "nothing runs out before %s", clk);
+      rateWin = &w;
+      ink = C_ACC;
+      footMin = (long)((w.resets_at - time(nullptr)) / 60);
+    } else {
+      strlcpy(kicker, "too early to say", sizeof(kicker));
+      strlcpy(hero, "no read yet", sizeof(hero));
+      strlcpy(detail, "ask again in an hour", sizeof(detail));
+      ink = C_MUTED;
+    }
+  }
+
+  int pad = scrW / 14;
+  if (pad < 6) pad = 6;
+  int innerW = scrW - 2 * pad;
+  uint8_t cap = roCap();
+
+  // Three bands: who and what, the answer, and the qualifier. The answer gets
+  // whatever size is left after the other two, which is most of the panel.
+  int y = scrH / 8;
+  // "Weekly - at the rate you are working". The lead-in is chosen against
+  // what is left of the line after the label, so it shortens rather than
+  // running off the panel.
+  char head[72];
+  if (rateWin) {
+    int room = innerW - (label ? ((int)strlen(label) + 3) * 6 * cap : 0);
+    const char *lead = leadFor(*rateWin, room, cap);
+    if (label) snprintf(head, sizeof(head), "%s \xB7 %s", label, lead);
+    else       snprintf(head, sizeof(head), "%s", lead);
+  } else if (label) {
+    snprintf(head, sizeof(head), "%s \xB7 %s", label, kicker);
+  } else {
+    snprintf(head, sizeof(head), "%s", kicker);
+  }
+  roText(head, pad, y, cap, C_MUTED);
+  y += 8 * cap + scrH / 24;
+
+  char lines[OUT_MAXLINES][48];
+  int dn = 0;
+  uint8_t dsz = wrapFit(detail, innerW, scrH / 4, cap + 1, lines, &dn);
+  int dLead = 10 * dsz;
+  int detailTop = scrH - scrH / 6 - dn * dLead;
+
+  uint8_t hsz = fitLine(hero, innerW, 9);
+  int heroH = 8 * hsz;
+  int heroY = y + ((detailTop - y) - heroH) / 2;
+  if (heroY < y) heroY = y;
+  roText(hero, pad, heroY, hsz, ink);
+
+  for (int i = 0; i < dn; i++) {
+    roText(lines[i], pad, detailTop + i * dLead, dsz, C_INK);
+  }
+
+  if (footMin >= 0) {
+    fmtSpan(footMin, when, sizeof(when));
+    char foot[32];
+    snprintf(foot, sizeof(foot), "resets in %s", when);
+    roRight(foot, scrW - pad, scrH - scrH / 6 + scrH / 40, cap, C_MUTED);
+  }
 }
 
 static void drawMicro() {
@@ -2979,9 +3297,9 @@ static void drawSettings() {
   gfx->drawFastHLine(mapX(14), mapY(106), mapLen(212), C_ACC_T);
   drawLeft("Screens in rotation", 14, 114, 1, C_MUTED);
 
-  // Ten rows at 17px end at 277, clear of the hint line at 304. Every screen
-  // added since has cost this list a pixel of spacing; at 19 the tenth row
-  // drew straight through the hint.
+  // Eleven rows at 16px end at 288, clear of the hint line at 304. Every
+  // screen added costs this list a pixel of spacing; at 17 the eleventh row
+  // drew through the hint, as the tenth did at 19.
   int y = 124;
   for (int k = 0; k < UI_SCREENS; k++) {
     int i = SCREEN_ORDER[k];
@@ -2991,7 +3309,7 @@ static void drawSettings() {
                                 mapLen(5), C_ACC_T);
     drawLeft(on ? "[x]" : "[ ]", 16, y, 1, on ? C_ACC : C_MUTED);
     drawLeft(SCREEN_NAMES[i], 46, y, 1, on ? C_INK : C_MUTED);
-    y += 17;
+    y += 16;
   }
 
   // A refusal has to say why, or the tap just looks broken. It fades so the
@@ -3047,6 +3365,7 @@ static void drawScreen() {
   else if (uiScreen == SCREEN_SETTINGS) drawSettings();
   else if (uiScreen == SCREEN_PACE)     drawPace();
   else if (uiScreen == SCREEN_MICRO)    drawMicro();
+  else if (uiScreen == SCREEN_OUTLOOK)  drawOutlook();
   else                                  drawMeters();
   updateStatusLed();
 }
@@ -3805,6 +4124,7 @@ static void loadCreds() {
   bool settingsMigrated = prefs.getBool("setmig", false);
   bool paceMigrated = prefs.getBool("pacemig", false);
   bool microMigrated = prefs.getBool("micmig", false);
+  bool outlookMigrated = prefs.getBool("outmig", false);
   prefs.end();
   // Purge a refresh token left by firmware that used to sign itself in. Done
   // here rather than on the next saveCreds() because a board that is never
@@ -3841,10 +4161,11 @@ static void loadCreds() {
     prefs.putBool("setmig", true);
     prefs.putBool("pacemig", true);
     prefs.putBool("micmig", true);
+    prefs.putBool("outmig", true);
     putScreenMask();
     prefs.end();
   } else if (!timerMigrated || !actionsMigrated || !projectsMigrated ||
-      !settingsMigrated || !paceMigrated || !microMigrated) {
+      !settingsMigrated || !paceMigrated || !microMigrated || !outlookMigrated) {
     prefs.begin("headroom", false);
     if (!timerMigrated) {
       screenMask |= (1 << SCREEN_TIMER);    prefs.putBool("tmrmig", true);
@@ -3864,6 +4185,9 @@ static void loadCreds() {
     }
     if (!microMigrated) {
       screenMask |= (1 << SCREEN_MICRO);    prefs.putBool("micmig", true);
+    }
+    if (!outlookMigrated) {
+      screenMask |= (1 << SCREEN_OUTLOOK);  prefs.putBool("outmig", true);
     }
     putScreenMask();
     prefs.end();
@@ -4854,6 +5178,38 @@ static void themePreview(String &s, int t) {
                "<i style='left:12px;top:68px;width:22px;height:3px;background:%s'></i>",
                c.ink, c.ink, c.muted); s += b;
       break;
+    case RO_HAZARD:
+      for (int k = 0; k < 12; k++) {
+        snprintf(b, sizeof(b),
+                 "<i style='left:%dpx;top:0;width:4px;height:12px;background:%s'></i>"
+                 "<i style='left:%dpx;top:92px;width:4px;height:12px;background:%s'></i>",
+                 -8 + k * 7, c.ink, -8 + k * 7, c.ink);
+        s += b;
+      }
+      snprintf(b, sizeof(b),
+               "<i style='left:8px;top:22px;width:20px;height:4px;background:%s'></i>"
+               "<i style='left:8px;top:36px;width:44px;height:30px;background:%s'></i>"
+               "<i style='left:8px;top:76px;width:30px;height:5px;background:%s'></i>",
+               c.muted, c.ink, c.ink); s += b;
+      break;
+    case RO_VU: {
+      // The arc, as nine dots on a circle -- a preview cannot draw a line.
+      for (int k = 0; k <= 8; k++) {
+        double ang = (-150.0 + 120.0 * (k / 8.0)) * 3.14159265 / 180.0;
+        int x = 32 + (int)(cos(ang) * 24), y = 60 + (int)(sin(ang) * 24);
+        snprintf(b, sizeof(b),
+                 "<i style='left:%dpx;top:%dpx;width:3px;height:3px;"
+                 "border-radius:50%%;background:%s'></i>",
+                 x, y, k >= 6 ? c.crit : c.ink); s += b;
+      }
+      snprintf(b, sizeof(b),
+               "<i style='left:30px;top:36px;width:3px;height:24px;background:%s'></i>"
+               "<i style='left:28px;top:56px;width:8px;height:8px;border-radius:50%%;"
+               "background:%s'></i>"
+               "<i style='left:8px;top:74px;width:30px;height:16px;background:%s'></i>",
+               c.ink, c.ink, c.ink); s += b;
+      break;
+    }
     default:                                   // Codec
       snprintf(b, sizeof(b),
                "<i style='left:8px;top:10px;width:22px;height:4px;background:%s'></i>"
@@ -5118,7 +5474,18 @@ static void handleSettingsSave() {
     uint16_t m = 0;
     for (int i = 0; i < UI_SCREENS; i++)
       if (server->arg(String("scr") + i) == "1") m |= (1 << i);
-    m |= (1 << defaultScreen);              // default always shown (also keeps m != 0)
+    // Unticking the screen that happens to be "show first" used to be
+    // impossible: the default was forced back into the mask, so the box
+    // silently re-ticked itself with nothing on the page to say why. The
+    // default has to be *a* screen in the rotation, not that screen, so it
+    // moves aside instead -- which is what the setup wizard already does with
+    // the same choice. Only an empty mask falls back to forcing it on, since
+    // a board with no screens has nothing to show at all.
+    if (m == 0) m = (1 << defaultScreen);
+    else if (!(m & (1 << defaultScreen))) {
+      for (int k = 0; k < UI_SCREENS; k++)
+        if (m & (1 << SCREEN_ORDER[k])) { defaultScreen = SCREEN_ORDER[k]; break; }
+    }
     screenMask = m;
     int r = server->arg("rots").toInt();
     if (r < 0) r = 0;
