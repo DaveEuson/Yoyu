@@ -3388,6 +3388,9 @@ static void handleStatus() {
   // counts is usually a reset time that never parsed.
   doc["screen"] = uiScreen;
   doc["screen_name"] = SCREEN_NAMES[uiScreen];
+  // Which way round the percentages read. The only way to see, from here,
+  // that a long press on a key did what a long press on glass does.
+  doc["show_used"] = showUsed;
   // Project shares, and how long ago they arrived — a Projects screen stuck on
   // yesterday's ranking is a companion that stopped pushing, not a board bug.
   if (nProjects > 0) {
@@ -5007,7 +5010,8 @@ static void handleSettingsPage() {
          "so the screens have to change on their own.</p>");
 #elif !HAS_TOUCH_INPUT
   s += F("<p class=muted style='margin:-8px 0 12px'>No touch on this board: "
-         "the left key goes back a screen and BOOT goes forward.</p>");
+         "the left key goes back a screen and BOOT goes forward. Hold the left "
+         "key to flip between &ldquo;% left&rdquo; and &ldquo;% used&rdquo;.</p>");
 #endif
   s += F("</select><label>Orientation</label><select name=orient>");
   static const char *ORIENTS[4] = {"Upright", "Sideways (clockwise)",
@@ -5800,12 +5804,24 @@ static void onKey(int dir) {
   cycleScreen(dir);
 }
 
-// Acted on at release, and only for a press between 30 ms (shorter is contact
-// bounce) and one second. BOOT held for five seconds is still the factory
-// reset, and a press that long is someone doing that rather than asking for
-// the next screen. Acting on release also means a pin stuck at either level
-// produces at most one event rather than a stream of them.
-static void pollKey(int pin, bool &down, unsigned long &at, int dir) {
+// A long press flips between "% left" and "% used", which is what a long press
+// does on a board you can touch. Only the left key offers it: BOOT held is the
+// factory reset, and teaching a hold on that key is asking for an accident.
+static void onKeyHold() {
+  keyPresses++;
+  lastUserTouch = millis();
+  if (screenOff) { wake(); return; }
+  toggleUsedMode();
+}
+
+// Acted on at release, so the length of the press decides which thing happens
+// and a pin stuck at either level produces at most one event rather than a
+// stream. Under 30 ms is contact bounce. Past five seconds nothing fires: on
+// BOOT that is the factory reset, and on either key it is a thumb resting on
+// the board rather than a decision.
+static const unsigned long KEY_HOLD_MS = 600;
+
+static void pollKey(int pin, bool &down, unsigned long &at, int dir, bool canHold) {
   bool now = digitalRead(pin) == LOW;       // both bound keys pull to ground
   unsigned long t = millis();
   if (now && !down) {
@@ -5814,15 +5830,17 @@ static void pollKey(int pin, bool &down, unsigned long &at, int dir) {
   } else if (!now && down) {
     down = false;
     unsigned long held = t - at;
-    if (held >= 30 && held < 1000) onKey(dir);
+    if (held < 30 || held >= 5000) return;
+    if (held < KEY_HOLD_MS) onKey(dir);
+    else if (canHold) onKeyHold();
   }
 }
 
 static void pollButtons() {
   static bool prevDown = false, nextDown = false;
   static unsigned long prevAt = 0, nextAt = 0;
-  pollKey(BTN_PREV_PIN, prevDown, prevAt, -1);
-  pollKey(BOOT_BTN, nextDown, nextAt, +1);
+  pollKey(BTN_PREV_PIN, prevDown, prevAt, -1, true);
+  pollKey(BOOT_BTN, nextDown, nextAt, +1, false);
 }
 #endif
 
