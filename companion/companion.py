@@ -1463,7 +1463,7 @@ def install_app(startup=True):
                      "Comment=Feed your Claude usage to a Yoyu board\n"
                      "Exec=%s\n"
                      "Terminal=false\n"
-                     "Categories=Utility;\n" % (APP_NAME, dst))
+                     "Categories=Utility;\n" % (APP_NAME, _desktop_exec([dst])))
         done.append("Menu entry: %s" % desktop)
         # A path entry too, so `yoyu-companion` works in a shell.
         bindir = os.path.expanduser("~/.local/bin")
@@ -1516,6 +1516,53 @@ def uninstall_app():
     except OSError:
         pass
     return removed
+
+
+# Where each Linux mechanism keeps its file. The systemd name never changed;
+# the XDG one is new with this mechanism.
+_SYSTEMD_UNIT = "claudetracker-companion"
+_XDG_AUTOSTART = "yoyu-companion.desktop"
+
+
+def _systemd_unit_path():
+    return os.path.expanduser("~/.config/systemd/user/%s.service" % _SYSTEMD_UNIT)
+
+
+def _xdg_autostart_path():
+    # XDG_CONFIG_HOME is where the spec says to look; ~/.config is its default.
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "autostart", _XDG_AUTOSTART)
+
+
+def _desktop_session():
+    """Whether this is running inside a graphical login, not over SSH or on a
+    headless box. The question start-at-login on Linux actually turns on."""
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _desktop_exec(argv):
+    """argv as the value of a .desktop Exec= key.
+
+    The Desktop Entry spec, not a shell: an argument with a space or any of
+    its reserved characters is double-quoted, and inside the quotes ", `, $
+    and \\ are backslash-escaped. A literal % is written %%, since a single
+    one introduces a field code. A path with a space in it -- a home folder
+    called "Sam Alex", or anything under a folder named with one -- was
+    written bare and split in two.
+
+    Exec is also a string-type key, and the spec applies its backslash
+    escaping *before* reading the quotes. So every backslash the quoting
+    produces is doubled once more on the way into the file: a literal one
+    ends up as four, which is what the spec itself says to expect.
+    """
+    reserved = set(' \t\n"\'\\><~|&;$*?#()`')
+    out = []
+    for a in argv:
+        a = a.replace("%", "%%")
+        if any(c in reserved for c in a):
+            a = '"%s"' % "".join("\\" + c if c in '"`$\\' else c for c in a)
+        out.append(a)
+    return " ".join(out).replace("\\", "\\\\")
 
 
 def _run_quietly(cmd):
@@ -1578,10 +1625,20 @@ def install_autostart():
         _run_quietly(["launchctl", "unload", target])
         _run_quietly(["launchctl", "load", target])
         return target
-    # linux
-    d = os.path.expanduser("~/.config/systemd/user")
+    # Linux has two answers, and which is right depends on where this is
+    # being set up from. The tray app opens its display the moment it starts,
+    # so it has to be launched inside the desktop session -- which a systemd
+    # user service is not guaranteed to be. Started that way on a desktop
+    # that does not hand DISPLAY to user services, it crashed at import, and
+    # Restart= kept crashing it. XDG autostart is the desktop's own mechanism
+    # and runs inside the session, so that is what a desktop login gets. A
+    # headless box -- the headless CLI's whole reason to exist -- has no
+    # session for XDG to run in, and systemd is still the right tool there.
+    if _desktop_session():
+        return _install_xdg_autostart(argv)
+    d = os.path.dirname(_systemd_unit_path())
     os.makedirs(d, exist_ok=True)
-    target = os.path.join(d, "claudetracker-companion.service")
+    target = _systemd_unit_path()
     exec_start = " ".join(argv)
     with open(target, "w", encoding="utf-8") as fh:
         fh.write(f"""[Unit]
@@ -1596,9 +1653,62 @@ RestartSec=30
 [Install]
 WantedBy=default.target
 """)
-    _run_quietly(["systemctl", "--user", "enable", "--now",
-                  "claudetracker-companion"])
+    _run_quietly(["systemctl", "--user", "enable", "--now", _SYSTEMD_UNIT])
     return target
+
+
+def _install_xdg_autostart(argv):
+    target = _xdg_autostart_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    with open(target, "w", encoding="utf-8") as fh:
+        fh.write("[Desktop Entry]\n"
+                 "Type=Application\n"
+                 "Name=%s\n"
+                 "Comment=Feed your Claude usage to a Yoyu board\n"
+                 "Exec=%s\n"
+                 "Terminal=false\n"
+                 "X-GNOME-Autostart-enabled=true\n"
+                 % (APP_NAME, _desktop_exec(argv)))
+    # Never both: a systemd unit left behind starts a second companion, and
+    # two pollers on one account is what rate-limits a board into showing
+    # nothing.
+    _retire_systemd_unit()
+    return target
+
+
+def _retire_systemd_unit():
+    """Remove the systemd unit, if this project wrote one.
+
+    Disabled without --now, deliberately. The process doing this may well be
+    the one that unit started, and stopping it here would take the companion
+    away until the next login for the sake of moving where it starts from.
+    """
+    path = _systemd_unit_path()
+    if not os.path.isfile(path):
+        return None
+    _run_quietly(["systemctl", "--user", "disable", _SYSTEMD_UNIT])
+    try:
+        os.remove(path)
+    except OSError:
+        return None
+    _run_quietly(["systemctl", "--user", "daemon-reload"])
+    return path
+
+
+def migrate_linux_autostart():
+    """Move a desktop login off the systemd unit an earlier version wrote.
+
+    Called on every start, by both entry points, because the people this is
+    for are the ones whose companion keeps failing to start at login -- they
+    cannot be asked to run a command to fix it. Only inside a desktop session,
+    and only when there is a unit to move: a headless box keeps its unit,
+    which is still correct there. Returns the new entry's path, or None.
+    """
+    if sys.platform == "win32" or sys.platform == "darwin":
+        return None
+    if not _desktop_session() or not os.path.isfile(_systemd_unit_path()):
+        return None
+    return _install_xdg_autostart(_launch_argv())
 
 
 # Every Windows autostart filename this project has ever written. The product
@@ -1667,9 +1777,15 @@ def uninstall_autostart():
         # one of each to remove.
         os.path.expanduser("~/Library/LaunchAgents/"
                            "com.claudetracker.companion.plist"),
-        os.path.expanduser("~/.config/systemd/user/"
-                           "claudetracker-companion.service"),
+        _xdg_autostart_path(),
     ]
+    # The unit is disabled, not just deleted: removing the file alone left
+    # the default.target.wants link pointing at nothing and the service
+    # running until the next login.
+    retired = _retire_systemd_unit() if sys.platform not in ("win32", "darwin") \
+        else None
+    if retired:
+        removed.append(retired)
     for p in paths:
         if os.path.isfile(p):
             try:
@@ -2193,6 +2309,10 @@ def main():
     for stale in sweep_stale_autostart():
         print("Removed a leftover auto-start entry from an older version:\n"
               f"  {stale}")
+    moved = migrate_linux_autostart()
+    if moved:
+        print("Start at login now uses your desktop's own autostart:\n"
+              f"  {moved}")
     first_ok, _, _ = run_once(cfg)
     # Deliberately does NOT install itself any more. It used to add a login
     # item after the first good push without asking, pointing at whatever path

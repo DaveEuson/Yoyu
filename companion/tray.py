@@ -709,6 +709,9 @@ def main():
     # notification too where the backend supports one.
     companion.sweep_stale_install()
     swept = companion.sweep_stale_autostart()
+    # Silent, unlike the sweep: nothing is lost here, start-at-login just
+    # moves somewhere that works, and there is nothing for the user to do.
+    companion.migrate_linux_autostart()
     if swept:
         state["status"] = ("Removed %d leftover auto-start %s from an older "
                            "version" % (len(swept),

@@ -39,6 +39,29 @@ jobs:
         run: python -W error::ResourceWarning -m unittest discover -s companion -v
       - name: Byte-compile every companion module
         run: python -m compileall -q companion
+      # The start-at-login entry is a .desktop file, read by the desktop rather
+      # than by this code, so the unit tests only check it against our own
+      # reading of the spec. desktop-file-validate is freedesktop.org's own
+      # reading. Generated for a path with a space, a quote and a $ in it,
+      # since those are what a hand-rolled Exec= gets wrong.
+      - name: Validate the start-at-login entry against the spec
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq desktop-file-utils
+          sandbox=$(mktemp -d)
+          HOME="$sandbox" XDG_CONFIG_HOME="$sandbox/.config" DISPLAY=:0 \
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "companion")
+          import companion
+          companion._run_quietly = lambda cmd: None
+          companion._launch_argv = lambda: [
+              '/home/Sam Alex/$work "beta"/yoyu-companion', "--flag"]
+          print(companion.install_autostart())
+          PY
+          desktop-file-validate "$sandbox/.config/autostart/yoyu-companion.desktop"
+          echo "start-at-login entry is valid"
 
   # The packaged apps are what people download, and a build that compiles can
   # still fail to start: PyInstaller misses an import it cannot see, and the
