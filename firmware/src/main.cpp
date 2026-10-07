@@ -665,6 +665,12 @@ static char      tzEnv[48]   = "EST5EDT,M3.2.0,M11.1.0";  // POSIX TZ, set via /
 static bool      clock24     = false; // false = 12-hour (3:45 PM), true = 24-hour
 static bool      nightDim    = true;  // ease the backlight down overnight
 static const uint8_t NIGHT_LEVEL = 40;
+// When the overnight dimming runs, in half hours since midnight (0..47),
+// saved as "nfrom" / "nto". 10pm to 7am unless changed, which is what it was
+// fixed at before it could be. A window that ends before it starts runs past
+// midnight; one that ends where it starts never runs.
+static uint8_t   nightFrom   = 44;
+static uint8_t   nightTo     = 14;
 static int       uiScreen    = 0;     // 0 meters 1 focus 2 history 3 kitsune
                                       // 4 timer 5 actions 6 projects 7 settings
                                       // 8 pace 9 micro 10 outlook
@@ -831,13 +837,16 @@ static int       histCount = 0;       // valid samples so far (<= HIST_LEN)
 static int       histHead  = 0;       // ring write index
 static const unsigned long SAMPLE_INTERVAL_MS = 10UL * 60UL * 1000UL;  // 10 min
 
-// 10pm-7am local (once NTP has synced). Shared by night-dim and the kitsune.
+// Inside the quiet-hours window, local time (once NTP has synced).
 static bool nightNow() {
   time_t now = time(nullptr);
   if (!timeSynced || now < 100000) return false;
   struct tm t;
   localtime_r(&now, &t);
-  return t.tm_hour >= 22 || t.tm_hour < 7;
+  int h = t.tm_hour * 2 + t.tm_min / 30;
+  if (nightFrom < nightTo) return h >= nightFrom && h < nightTo;
+  if (nightFrom > nightTo) return h >= nightFrom || h < nightTo;
+  return false;
 }
 
 // Effective brightness = 0 if screen is off, capped to NIGHT_LEVEL overnight,
@@ -3675,6 +3684,9 @@ static void handleStatus() {
   // onto a dark panel looks identical, over the network, to one that is fine.
   doc["screen_off"] = screenOff;
   doc["backlight"] = backlight;
+  doc["night_from"] = nightFrom;      // half hours since midnight
+  doc["night_to"]   = nightTo;
+  doc["night_now"]  = nightDim && nightNow();
   // Same reasoning as poll_status above: the gauge was drawn on the glass and
   // nowhere else, so "is it running on battery, and how flat" could only be
   // answered by walking over and looking. null when there is no cell.
@@ -4120,6 +4132,10 @@ static void loadCreds() {
   strlcpy(tzEnv, prefs.getString("tz", tzEnv).c_str(), sizeof(tzEnv));
   clock24    = prefs.getBool("clk24", false);
   nightDim   = prefs.getBool("ndim", true);
+  nightFrom  = prefs.getUChar("nfrom", 44);
+  nightTo    = prefs.getUChar("nto", 14);
+  if (nightFrom > 47) nightFrom = 44;
+  if (nightTo > 47)   nightTo   = 14;
   // 0xFFFF cannot be a real mask with nine screens, so it doubles as "never
   // saved" and a board upgrading from the one-byte key falls through to it.
   // 0 is not a real mask either, since the default screen is always forced on,
@@ -5247,6 +5263,38 @@ static void themePreview(String &s, int t) {
 // page for some other reason never moves the brightness.
 static const uint8_t BL_STEPS[] = {BL_FLOOR, 64, 128, 191, 255};
 
+// One half-hour step as the clock on the board shows it: "22:30" or
+// "10:30 PM", so the page and the screen never disagree about the format.
+static String halfHourLabel(int h) {
+  int hr = h / 2, mn = (h & 1) ? 30 : 0;
+  char b[12];
+  if (clock24) snprintf(b, sizeof(b), "%02d:%02d", hr, mn);
+  else snprintf(b, sizeof(b), "%d:%02d %s", hr % 12 ? hr % 12 : 12, mn,
+                hr < 12 ? "AM" : "PM");
+  return String(b);
+}
+
+static String halfHourSelect(const char *name, uint8_t sel) {
+  String s = "<select name=" + String(name) +
+             " style='width:auto;display:inline-block'>";
+  for (int h = 0; h < 48; h++) {
+    s += "<option value=" + String(h);
+    if (h == sel) s += " selected";
+    s += ">" + halfHourLabel(h) + "</option>";
+  }
+  s += F("</select>");
+  return s;
+}
+
+static String quietHoursField() {
+  String s = F("<label>Dim from</label><div>");
+  s += halfHourSelect("nfrom", nightFrom);
+  s += F(" until ");
+  s += halfHourSelect("nto", nightTo);
+  s += F("</div>");
+  return s;
+}
+
 static String brightnessField() {
   String s = F("<label>Brightness</label><select name=bl>");
   bool listed = false;
@@ -5359,9 +5407,10 @@ static void handleSettingsPage() {
          "<label>Overnight dimming</label><select name=ndim>"
          "<option value=on");
   if (nightDim) s += " selected";
-  s += F(">On (dim 10pm-7am)</option><option value=off");
+  s += F(">On</option><option value=off");
   if (!nightDim) s += " selected";
   s += F(">Off</option></select>");
+  s += quietHoursField();
   s += brightnessField();
   if (fromSetup)
     s += F("<p id=screens style='background:#fbeee8;border-radius:10px;"
@@ -5516,6 +5565,14 @@ static void handleSettingsSave() {
   if (server->hasArg("ndim")) {
     nightDim = (server->arg("ndim") == "on");
     prefs.putBool("ndim", nightDim);
+  }
+  if (server->hasArg("nfrom") && server->hasArg("nto")) {
+    int f = server->arg("nfrom").toInt(), t = server->arg("nto").toInt();
+    if (f >= 0 && f < 48 && t >= 0 && t < 48) {
+      nightFrom = f; nightTo = t;
+      prefs.putUChar("nfrom", nightFrom);
+      prefs.putUChar("nto", nightTo);
+    }
   }
   if (server->hasArg("bl")) {
     int v = server->arg("bl").toInt();
