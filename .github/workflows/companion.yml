@@ -78,6 +78,11 @@ jobs:
             --hidden-import "${{ matrix.tray_backend }}" \
             --collect-submodules PIL tray.py
           pyinstaller --onefile --name YoyuCompanion-cli companion.py
+      # The Linux tray backend opens an X display the moment it is imported,
+      # not when an icon is shown, so a runner with no screen fails the launch
+      # before the build has been tested at all. A virtual one stands in.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
       - name: Launch them
         working-directory: companion/dist
         shell: bash
@@ -88,5 +93,9 @@ jobs:
           # The tray app loads its platform backend, draws every character
           # and exits without opening a window. It has no console, so the exit
           # code is the whole answer.
-          ./YoyuCompanion${{ matrix.ext }} --selftest
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a ./YoyuCompanion --selftest
+          else
+            ./YoyuCompanion${{ matrix.ext }} --selftest
+          fi
           echo "both apps start on ${{ matrix.os }}"

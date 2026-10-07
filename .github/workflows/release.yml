@@ -58,6 +58,11 @@ jobs:
           cd dist
           mv "YoyuCompanion${{ matrix.ext }}" "${{ matrix.asset }}"
           mv "YoyuCompanion-cli${{ matrix.ext }}" "${{ matrix.cli_asset }}"
+      # The Linux tray backend opens an X display the moment it is imported,
+      # not when an icon is shown, so a runner with no screen fails the launch
+      # before the build has been tested at all. A virtual one stands in.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
       - name: Refuse to publish an app that will not start
         working-directory: companion/dist
         shell: bash
@@ -68,7 +73,11 @@ jobs:
           # Windows apps and never once ran them, so a broken one would have
           # shipped. These are the exact files about to be uploaded.
           ./${{ matrix.cli_asset }} --help > /dev/null
-          ./${{ matrix.asset }} --selftest
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a ./${{ matrix.asset }} --selftest
+          else
+            ./${{ matrix.asset }} --selftest
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}

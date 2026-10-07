@@ -681,7 +681,11 @@ def selftest():
     tested on. `import pystray` at the top of this file loads the platform
     backend, so reaching this function already proves that much; drawing
     every character proves Pillow came along too. It stops short of
-    Icon.run(), which needs a desktop session and never returns.
+    Icon.run(), which never returns.
+
+    It still needs a screen on Linux: the X backend opens the display at
+    import, not when the icon appears, so run it under xvfb-run where there
+    is none.
 
     Exits rather than prints: the tray build has no console, so on Windows
     there is nowhere for output to go and the exit code is the whole answer.
