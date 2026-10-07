@@ -366,6 +366,14 @@ class EntryPointSweepTests(unittest.TestCase):
     def test_tray_entry_point_sweeps(self):
         self.assertIn("sweep_stale_autostart()", self._src("tray.py"))
 
+    # The people migration is for are the ones whose companion is failing to
+    # start at login, so it cannot wait for them to run a command.
+    def test_cli_entry_point_migrates(self):
+        self.assertIn("migrate_linux_autostart()", self._src("companion.py"))
+
+    def test_tray_entry_point_migrates(self):
+        self.assertIn("migrate_linux_autostart()", self._src("tray.py"))
+
     def test_cli_entry_point_rescans_on_a_timer(self):
         self.assertIn("refresh_targets(", self._src("companion.py"))
 
@@ -1209,9 +1217,15 @@ class AutostartTests(_QuietTest):
         # expanduser() reads HOME on POSIX and USERPROFILE on Windows; APPDATA
         # is where the Windows Startup folder lives. Point all three at the
         # sandbox so nothing here touches the real machine.
-        for var in ("HOME", "USERPROFILE", "APPDATA"):
+        for var in ("HOME", "USERPROFILE", "APPDATA", "XDG_CONFIG_HOME"):
             self.addCleanup(self._restore_env, var, os.environ.get(var))
             os.environ[var] = self.home
+        os.environ["XDG_CONFIG_HOME"] = os.path.join(self.home, ".config")
+        # Headless unless a test says otherwise: whether there is a desktop
+        # session is what decides the Linux mechanism.
+        for var in ("DISPLAY", "WAYLAND_DISPLAY"):
+            self.addCleanup(self._restore_env, var, os.environ.get(var))
+            os.environ.pop(var, None)
         self._plat = companion.sys.platform
         self.addCleanup(setattr, companion.sys, "platform", self._plat)
         self.calls = []
@@ -1257,7 +1271,7 @@ class AutostartTests(_QuietTest):
         target = companion.install_autostart()
         self.assertIn(["launchctl", "load", target], self.calls)
 
-    # ---- Linux ---------------------------------------------------------
+    # ---- Linux, headless: the systemd unit ------------------------------
     def test_linux_unit_restarts_only_on_failure(self):
         self._as("linux", ["/home/sam/.local/bin/yoyu-companion"])
         with open(companion.install_autostart(), encoding="utf-8") as fh:
@@ -1270,6 +1284,145 @@ class AutostartTests(_QuietTest):
         self._as("linux", ["/usr/bin/yoyu-companion"])
         companion.install_autostart()
         self.assertTrue(any(c[:2] == ["systemctl", "--user"] for c in self.calls))
+
+    # ---- Linux, in a desktop session: XDG autostart ----------------------
+    def _read_desktop(self, path):
+        with open(path, encoding="utf-8") as fh:
+            return dict(line.split("=", 1) for line in fh.read().splitlines()
+                        if "=" in line)
+
+    @staticmethod
+    def _decode_exec(value):
+        """Read an Exec= value back the way the Desktop Entry spec does:
+        string-key escapes first, then the quoting, then field codes.
+
+        Not shlex: inside double quotes the spec also treats \\` and \\$ as
+        escapes, which shlex leaves alone, so it would call a correct entry
+        wrong.
+        """
+        value = (value.replace("\\\\", "\x00").replace("\\s", " ")
+                 .replace("\\n", "\n").replace("\\t", "\t")
+                 .replace("\\r", "\r").replace("\x00", "\\"))
+        args, cur, quoted, started, i = [], [], False, False, 0
+        while i < len(value):
+            c = value[i]
+            if quoted and c == "\\" and i + 1 < len(value) \
+                    and value[i + 1] in '"`$\\':
+                cur.append(value[i + 1])
+                i += 2
+                continue
+            if c == '"':
+                quoted, started = not quoted, True
+            elif c == " " and not quoted:
+                if started or cur:
+                    args.append("".join(cur))
+                cur, started = [], False
+            else:
+                cur.append(c)
+                started = True
+            i += 1
+        if started or cur:
+            args.append("".join(cur))
+        return [a.replace("%%", "%") for a in args]
+
+    def test_desktop_login_uses_xdg_autostart_not_systemd(self):
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/home/sam/.local/bin/yoyu-companion"])
+        target = companion.install_autostart()
+        self.assertEqual(target, os.path.join(self.home, ".config", "autostart",
+                                              "yoyu-companion.desktop"))
+        entry = self._read_desktop(target)
+        self.assertEqual(entry["Type"], "Application")
+        self.assertEqual(entry["Exec"], "/home/sam/.local/bin/yoyu-companion")
+        # Started by the session, so nothing is enabled with systemd.
+        self.assertFalse(any("enable" in c for c in self.calls))
+
+    def test_wayland_counts_as_a_desktop_session(self):
+        os.environ["WAYLAND_DISPLAY"] = "wayland-0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        self.assertTrue(companion.install_autostart().endswith(".desktop"))
+
+    def test_exec_survives_paths_a_shell_would_mangle(self):
+        os.environ["DISPLAY"] = ":0"
+        for path in ("/home/Sam Alex/yoyu-companion",
+                     '/home/sam/"quoted"/yoyu-companion',
+                     "/home/sam/$HOME/yoyu-companion",
+                     "/home/sam/back\\slash/yoyu-companion",
+                     "/home/sam/100%/yoyu-companion"):
+            self._as("linux", [path, "--flag"])
+            entry = self._read_desktop(companion.install_autostart())
+            self.assertEqual(self._decode_exec(entry["Exec"]), [path, "--flag"],
+                             "Exec for %r" % path)
+
+    def test_desktop_install_retires_an_old_unit(self):
+        unit = companion._systemd_unit_path()
+        os.makedirs(os.path.dirname(unit))
+        with open(unit, "w", encoding="utf-8") as fh:
+            fh.write("[Service]\nExecStart=/old\n")
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        companion.install_autostart()
+        self.assertFalse(os.path.exists(unit))
+        disable = [c for c in self.calls if "disable" in c]
+        self.assertEqual(disable, [["systemctl", "--user", "disable",
+                                    "claudetracker-companion"]])
+
+    # ---- moving an earlier install over -----------------------------------
+    def _old_unit(self):
+        unit = companion._systemd_unit_path()
+        os.makedirs(os.path.dirname(unit))
+        with open(unit, "w", encoding="utf-8") as fh:
+            fh.write("[Service]\nExecStart=/usr/bin/yoyu-companion\n")
+        return unit
+
+    def test_migration_moves_a_desktop_login_off_systemd(self):
+        unit = self._old_unit()
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        moved = companion.migrate_linux_autostart()
+        self.assertTrue(moved and os.path.isfile(moved))
+        self.assertFalse(os.path.exists(unit))
+
+    def test_migration_never_stops_the_running_companion(self):
+        # The process migrating may be the one the unit started; --now would
+        # stop it and leave nothing running until the next login.
+        self._old_unit()
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        companion.migrate_linux_autostart()
+        self.assertFalse(any("--now" in c for c in self.calls))
+        self.assertIn(["systemctl", "--user", "daemon-reload"], self.calls)
+
+    def test_migration_leaves_a_headless_box_alone(self):
+        unit = self._old_unit()
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        self.assertIsNone(companion.migrate_linux_autostart())
+        self.assertTrue(os.path.isfile(unit))      # still right without a desktop
+
+    def test_migration_does_nothing_without_an_old_unit(self):
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        self.assertIsNone(companion.migrate_linux_autostart())
+        self.assertEqual(self.calls, [])
+
+    def test_migration_is_linux_only(self):
+        self._old_unit()
+        os.environ["DISPLAY"] = ":0"
+        for plat in ("darwin", "win32"):
+            self._as(plat, ["/x"])
+            self.assertIsNone(companion.migrate_linux_autostart())
+
+    def test_uninstall_removes_both_and_disables_the_unit(self):
+        os.environ["DISPLAY"] = ":0"
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        entry = companion.install_autostart()
+        unit = self._old_unit()
+        removed = companion.uninstall_autostart()
+        self.assertIn(entry, removed)
+        self.assertIn(unit, removed)
+        self.assertFalse(os.path.exists(entry) or os.path.exists(unit))
+        self.assertIn(["systemctl", "--user", "disable",
+                       "claudetracker-companion"], self.calls)
 
     # ---- Windows -------------------------------------------------------
     def test_windows_startup_entry_quotes_the_path(self):
