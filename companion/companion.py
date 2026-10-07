@@ -34,6 +34,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+from xml.sax.saxutils import escape as xml_escape
 import sys
 import threading
 import time
@@ -1517,6 +1518,29 @@ def uninstall_app():
     return removed
 
 
+def _run_quietly(cmd):
+    """Run a service-manager command, tolerating its absence.
+
+    systemctl is not on every Linux -- Alpine, Void, WSL and most containers
+    have none -- and an unguarded subprocess.run raises FileNotFoundError
+    there, which took the whole of --install down with it partway through.
+    The unit file is still written, so a user on another init system has
+    something to point theirs at; only the enabling is skipped.
+    """
+    try:
+        return subprocess.run(cmd, capture_output=True)
+    except (FileNotFoundError, PermissionError):
+        return None
+
+
+# Whether the companion keeps itself running is the same question on every
+# platform, and it used to get three answers. Windows ran it once at login;
+# macOS (KeepAlive) and Linux (Restart=always) relaunched it the moment it
+# exited -- so choosing Quit from the tray brought it straight back on two
+# of the three, and only there. All three now restart it after a crash and
+# leave it alone after a deliberate quit.
+
+
 def install_autostart():
     """Set the companion to launch at login. Returns a human-readable path."""
     argv = _launch_argv()
@@ -1536,7 +1560,10 @@ def install_autostart():
         d = os.path.expanduser("~/Library/LaunchAgents")
         os.makedirs(d, exist_ok=True)
         target = os.path.join(d, "com.claudetracker.companion.plist")
-        args_xml = "".join(f"<string>{a}</string>" for a in argv)
+        # Escaped, because this is XML: a path with an & or a < in it (a home
+        # folder named "Sam & Alex", say) wrote a plist launchd refuses to
+        # read, and refuses silently -- the app just never started at login.
+        args_xml = "".join("<string>%s</string>" % xml_escape(a) for a in argv)
         with open(target, "w", encoding="utf-8") as fh:
             fh.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -1546,11 +1573,10 @@ def install_autostart():
   <key>ProgramArguments</key>
   <array>{args_xml}</array>
   <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 </dict></plist>""")
-        subprocess.run(["launchctl", "unload", target],
-                       capture_output=True)
-        subprocess.run(["launchctl", "load", target], capture_output=True)
+        _run_quietly(["launchctl", "unload", target])
+        _run_quietly(["launchctl", "load", target])
         return target
     # linux
     d = os.path.expanduser("~/.config/systemd/user")
@@ -1564,14 +1590,14 @@ After=network-online.target
 
 [Service]
 ExecStart={exec_start}
-Restart=always
+Restart=on-failure
 RestartSec=30
 
 [Install]
 WantedBy=default.target
 """)
-    subprocess.run(["systemctl", "--user", "enable", "--now",
-                    "claudetracker-companion"], capture_output=True)
+    _run_quietly(["systemctl", "--user", "enable", "--now",
+                  "claudetracker-companion"])
     return target
 
 

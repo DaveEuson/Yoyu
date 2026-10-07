@@ -672,7 +672,33 @@ def _board_items():
     ]
 
 
+def selftest():
+    """Prove a packaged build can start, without starting it.
+
+    The way a PyInstaller build breaks is a missing hidden import, and it
+    only shows when the frozen binary imports the tray backend -- which a
+    build that compiles cleanly can still fail to do on a machine nobody
+    tested on. `import pystray` at the top of this file loads the platform
+    backend, so reaching this function already proves that much; drawing
+    every character proves Pillow came along too. It stops short of
+    Icon.run(), which never returns.
+
+    It still needs a screen on Linux: the X backend opens the display at
+    import, not when the icon appears, so run it under xvfb-run where there
+    is none.
+
+    Exits rather than prints: the tray build has no console, so on Windows
+    there is nowhere for output to go and the exit code is the whole answer.
+    """
+    for avatar in list(AVATAR_ART) + [None]:
+        for colour in ("green", "amber", "red"):
+            make_icon(colour, avatar)
+    sys.exit(0)
+
+
 def main():
+    if "--selftest" in sys.argv[1:]:
+        selftest()
     # The tray app has its own entry point and never runs companion.main(), so
     # the stale-auto-start sweep that lives there was never reaching the build
     # that most people actually download. Caught by running the packaged binary
