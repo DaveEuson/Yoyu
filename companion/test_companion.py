@@ -911,7 +911,8 @@ class InstallTests(_QuietTest):
         self.addCleanup(setattr, companion, "installed_exe", orig)
 
     def test_launch_argv_prefers_the_installed_copy(self):
-        open(self.exe, "wb").write(b"x")
+        with open(self.exe, "wb") as fh:
+            fh.write(b"x")
         self.assertTrue(companion.is_installed())
         self.assertEqual(companion._launch_argv(), [self.exe])
 
@@ -930,7 +931,8 @@ class InstallTests(_QuietTest):
 
     def test_stale_upgrade_copy_is_swept(self):
         stale = self.exe + ".old"
-        open(stale, "wb").write(b"x" * 10)
+        with open(stale, "wb") as fh:
+            fh.write(b"x" * 10)
         self.assertEqual(companion.sweep_stale_install(), stale)
         self.assertFalse(os.path.exists(stale))
 
@@ -1186,6 +1188,114 @@ class WrongFirmwareTests(_QuietTest):
                "version": "1.9.1"}
         self.assertEqual(companion.hardware_warning(old), "")
         self.assertNotIn("WRONG", companion.describe_board(old))
+
+
+class AutostartTests(_QuietTest):
+    """Start-at-login, for all three platforms, on whichever one runs this.
+
+    This is the most platform-specific code in the companion and it had no
+    tests at all, which is how three bugs lived in it: an unescaped macOS
+    plist that launchd silently refused, a Linux install that crashed where
+    there is no systemctl, and a Quit that only stuck on Windows. Every
+    branch reads only sys.platform and a couple of environment variables, so
+    each is driven here on every runner -- a Windows machine tests the macOS
+    plist, and the CI matrix runs the lot natively on all three as well.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        # expanduser() reads HOME on POSIX and USERPROFILE on Windows; APPDATA
+        # is where the Windows Startup folder lives. Point all three at the
+        # sandbox so nothing here touches the real machine.
+        for var in ("HOME", "USERPROFILE", "APPDATA"):
+            self.addCleanup(self._restore_env, var, os.environ.get(var))
+            os.environ[var] = self.home
+        self._plat = companion.sys.platform
+        self.addCleanup(setattr, companion.sys, "platform", self._plat)
+        self.calls = []
+        orig_run = companion._run_quietly
+        companion._run_quietly = lambda cmd: self.calls.append(cmd)
+        self.addCleanup(setattr, companion, "_run_quietly", orig_run)
+        orig_argv = companion._launch_argv
+        self.addCleanup(setattr, companion, "_launch_argv", orig_argv)
+
+    @staticmethod
+    def _restore_env(var, value):
+        if value is None:
+            os.environ.pop(var, None)
+        else:
+            os.environ[var] = value
+
+    def _as(self, platform, argv):
+        companion.sys.platform = platform
+        companion._launch_argv = lambda: list(argv)
+
+    # ---- macOS ---------------------------------------------------------
+    def test_macos_plist_is_valid_xml_whatever_the_path(self):
+        import plistlib
+        path = os.path.join(self.home, "Sam & Alex <beta>", "YoyuCompanion")
+        self._as("darwin", [path])
+        target = companion.install_autostart()
+        with open(target, "rb") as fh:
+            plist = plistlib.load(fh)          # raises if launchd would refuse it
+        self.assertEqual(plist["ProgramArguments"], [path])
+        self.assertEqual(plist["Label"], "com.claudetracker.companion")
+
+    def test_macos_restarts_after_a_crash_but_not_after_quit(self):
+        import plistlib
+        self._as("darwin", ["/Applications/YoyuCompanion"])
+        with open(companion.install_autostart(), "rb") as fh:
+            plist = plistlib.load(fh)
+        self.assertTrue(plist["RunAtLoad"])
+        # A plain True relaunched it the moment you chose Quit.
+        self.assertEqual(plist["KeepAlive"], {"SuccessfulExit": False})
+
+    def test_macos_loads_the_agent(self):
+        self._as("darwin", ["/Applications/YoyuCompanion"])
+        target = companion.install_autostart()
+        self.assertIn(["launchctl", "load", target], self.calls)
+
+    # ---- Linux ---------------------------------------------------------
+    def test_linux_unit_restarts_only_on_failure(self):
+        self._as("linux", ["/home/sam/.local/bin/yoyu-companion"])
+        with open(companion.install_autostart(), encoding="utf-8") as fh:
+            unit = fh.read()
+        self.assertIn("Restart=on-failure", unit)
+        self.assertNotIn("Restart=always", unit)
+        self.assertIn("ExecStart=/home/sam/.local/bin/yoyu-companion", unit)
+
+    def test_linux_enables_the_unit(self):
+        self._as("linux", ["/usr/bin/yoyu-companion"])
+        companion.install_autostart()
+        self.assertTrue(any(c[:2] == ["systemctl", "--user"] for c in self.calls))
+
+    # ---- Windows -------------------------------------------------------
+    def test_windows_startup_entry_quotes_the_path(self):
+        exe = os.path.join(self.home, "Program Files", "YoyuCompanion.exe")
+        self._as("win32", [exe])
+        target = companion.install_autostart()
+        self.assertTrue(target.endswith("YoyuCompanion.bat"))
+        with open(target, encoding="utf-8") as fh:
+            bat = fh.read()
+        # Quoted, or a space in the path splits it in two at login.
+        self.assertIn('start "" "%s"' % exe, bat)
+
+    def test_windows_needs_no_service_manager(self):
+        self._as("win32", [os.path.join(self.home, "YoyuCompanion.exe")])
+        companion.install_autostart()
+        self.assertEqual(self.calls, [])
+
+
+class ServiceManagerTests(_QuietTest):
+    """A missing service manager must not take --install down with it."""
+
+    def test_a_missing_command_is_tolerated(self):
+        # Alpine, Void, WSL and most containers have no systemctl, and an
+        # unguarded subprocess.run raises FileNotFoundError there.
+        self.assertIsNone(
+            companion._run_quietly(["yoyu-no-such-command-anywhere", "--help"]))
 
 
 if __name__ == "__main__":

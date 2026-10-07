@@ -1,29 +1,92 @@
 name: Test companion
 
 # Unit-tests the companion's pure logic (window parsing/labelling, pairing
-# HMAC). These are the parts that fail silently: a mislabelled window looks
-# plausible on the board, and a pairing MAC that drifts from the firmware's
-# framing only shows up on real hardware.
+# HMAC, start-at-login). These are the parts that fail silently: a mislabelled
+# window looks plausible on the board, a pairing MAC that drifts from the
+# firmware's framing only shows up on real hardware, and a start-at-login
+# entry the OS refuses just never starts.
+#
+# On all three platforms. The companion branches on the OS for where it
+# installs, how it adds itself to the menu and how it starts at login, and
+# for a long time only the Linux branch of each ran here -- so the macOS one
+# shipped writing a plist launchd could refuse, and nothing noticed.
 
 on:
   push:
     tags-ignore: ["v*"]
     paths: ["companion/**", ".github/workflows/companion.yml"]
   pull_request:
-    paths: ["companion/**", ".github/workflows/companion.yml"]
+    paths: ["companion/**", ".github/workflows/companion.yml",
+            ".github/workflows/release.yml"]
   workflow_dispatch: {}
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       # No install step: the companion is stdlib-only by design (certifi is an
-      # optional runtime nicety), and the tests touch no network or filesystem.
+      # optional runtime nicety), and the tests touch no network or filesystem
+      # outside a temporary directory.
       - name: Run unit tests
-        run: python -m unittest discover -s companion -v
+        run: python -W error::ResourceWarning -m unittest discover -s companion -v
       - name: Byte-compile every companion module
         run: python -m compileall -q companion
+
+  # The packaged apps are what people download, and a build that compiles can
+  # still fail to start: PyInstaller misses an import it cannot see, and the
+  # frozen binary dies the first time it reaches for it. Unit tests run the
+  # source, so they cannot catch that. This builds both apps exactly as the
+  # release does and launches each one -- on every platform, before a tag,
+  # rather than finding out from someone who downloaded it.
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            ext: ".exe"
+            gui_deps: ""
+            tray_backend: pystray._win32
+          - os: macos-latest
+            ext: ""
+            gui_deps: "pyobjc-framework-Cocoa"
+            tray_backend: pystray._darwin
+          - os: ubuntu-latest
+            ext: ""
+            gui_deps: "python-xlib"
+            tray_backend: pystray._xorg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pyinstaller certifi pystray pillow ${{ matrix.gui_deps }}
+      - name: Build both apps the way the release does
+        working-directory: companion
+        shell: bash
+        run: |
+          pyinstaller --onefile --name YoyuCompanion --noconsole \
+            --hidden-import "${{ matrix.tray_backend }}" \
+            --collect-submodules PIL tray.py
+          pyinstaller --onefile --name YoyuCompanion-cli companion.py
+      - name: Launch them
+        working-directory: companion/dist
+        shell: bash
+        run: |
+          # The CLI parses its arguments and exits, which is enough to prove
+          # the frozen interpreter and every module it imports came along.
+          ./YoyuCompanion-cli${{ matrix.ext }} --help > /dev/null
+          # The tray app loads its platform backend, draws every character
+          # and exits without opening a window. It has no console, so the exit
+          # code is the whole answer.
+          ./YoyuCompanion${{ matrix.ext }} --selftest
+          echo "both apps start on ${{ matrix.os }}"
