@@ -655,7 +655,10 @@ static bool     credCapped  = false;  // spend limit reached
 // thing to say than "you are running on credits".
 static bool     credAvail   = false;
 static bool      batCharging = false;
-static uint8_t   backlight   = 255;   // 0..255
+static uint8_t   backlight   = 255;   // 0..255, saved as "bl"
+// The dimmest the brightness setting goes. Below this the panel reads as off,
+// and a screen that looks off with nothing to say why is a support question.
+static const uint8_t BL_FLOOR = 25;
 static bool      showUsed    = false; // false = "% left", true = "% used"
 static bool      screenOff   = false; // face-down / manual dim
 static char      tzEnv[48]   = "EST5EDT,M3.2.0,M11.1.0";  // POSIX TZ, set via /settings
@@ -843,7 +846,7 @@ static bool nightNow() {
 // The IPS panel dims a backlight LED behind the glass; the AMOLED is
 // self-emissive and has no such pin, so the same number goes to the panel
 // itself as a command. Same scale either way, so everything above this is
-// unchanged -- including the settings UI and the swipe gesture.
+// unchanged -- including the settings page and the swipe gesture.
 // Set once gfx->begin() has run. On the LCD board brightness is a PWM pin that
 // exists from boot, so applyBacklight() could be called whenever; on the AMOLED
 // it is a command down the QSPI bus, and calling it early dereferences a bus
@@ -872,7 +875,11 @@ static void applyBacklight() {
   // Per-board ceiling. The 1.47" panel is documented as overheating at full
   // brightness, and the damage it leaves is permanent, so its limit belongs in
   // the firmware rather than in a warning. 255 everywhere else.
-  if (eff > BACKLIGHT_MAX) eff = BACKLIGHT_MAX;
+  //
+  // Scaled into, not clipped at. Clipping made the top half of the setting do
+  // nothing on that board -- 50%, 75% and 100% all the same light -- so the
+  // setting is a share of what the panel may safely do, on every panel.
+  eff = (uint16_t)eff * BACKLIGHT_MAX / 255;
 #if PANEL_HAS_BACKLIGHT
   ledcWrite(LCD_BL, eff);
 #else
@@ -885,6 +892,14 @@ static void applyBacklight() {
 static void setBacklight(uint8_t v) {
   backlight = v;
   applyBacklight();
+}
+
+// The brightness someone chose, kept across a restart. Until this it was
+// forgotten at every boot: a board dimmed for a bedroom came back at full.
+static void saveBacklight() {
+  prefs.begin("headroom", false);
+  prefs.putUChar("bl", backlight);
+  prefs.end();
 }
 
 // ------------------------------------------------------------ small helpers
@@ -5226,6 +5241,39 @@ static void themePreview(String &s, int t) {
   s += "</span>";
 }
 
+// Brightness, as five steps rather than a slider: the page has no script, and
+// a range input would show no number without one. A level reached by swiping
+// that is not one of the steps is offered as itself, selected, so saving the
+// page for some other reason never moves the brightness.
+static const uint8_t BL_STEPS[] = {BL_FLOOR, 64, 128, 191, 255};
+
+static String brightnessField() {
+  String s = F("<label>Brightness</label><select name=bl>");
+  bool listed = false;
+  for (uint8_t v : BL_STEPS) listed |= (v == backlight);
+  if (!listed)
+    s += "<option value=" + String(backlight) + " selected>" +
+         String((backlight * 100 + 127) / 255) + "% (set by swiping)</option>";
+  for (uint8_t v : BL_STEPS) {
+    s += "<option value=" + String(v);
+    if (v == backlight) s += " selected";
+    s += ">" + String((v * 100 + 127) / 255) + "%";
+    if (v == 255) s += BACKLIGHT_MAX < 255 ? " (safe maximum)" : " (full)";
+    s += "</option>";
+  }
+  s += F("</select>");
+#if BACKLIGHT_MAX < 255
+  // The reason for the ceiling, said where the control is. Someone who finds
+  // "100%" dimmer than they expected should learn why, not go looking for a
+  // way round it.
+  s += F("<p style='margin:-6px 0 12px;font-size:13px;color:#8a5a00'>"
+         "Waveshare warns that this screen heats up at full power and can be "
+         "left with permanent dark patches. 100% here is the brightest it can "
+         "safely go: half of what the panel can do.</p>");
+#endif
+  return s;
+}
+
 static void handleSettingsPage() {
   // ?screens=meters,pace&default=pace&rotate=20 is how the setup wizard hands
   // over the screens someone picked there. It fills the form in and nothing
@@ -5314,6 +5362,7 @@ static void handleSettingsPage() {
   s += F(">On (dim 10pm-7am)</option><option value=off");
   if (!nightDim) s += " selected";
   s += F(">Off</option></select>");
+  s += brightnessField();
   if (fromSetup)
     s += F("<p id=screens style='background:#fbeee8;border-radius:10px;"
            "padding:10px 12px;margin:6px 0 10px'>Your choices from setup are filled "
@@ -5467,6 +5516,14 @@ static void handleSettingsSave() {
   if (server->hasArg("ndim")) {
     nightDim = (server->arg("ndim") == "on");
     prefs.putBool("ndim", nightDim);
+  }
+  if (server->hasArg("bl")) {
+    int v = server->arg("bl").toInt();
+    if (v >= BL_FLOOR && v <= 255) {
+      prefs.putUChar("bl", (uint8_t)v);
+      screenOff = false;
+      setBacklight((uint8_t)v);      // and night dimming still caps it
+    }
   }
   if (server->hasArg("dscr")) {              // the screen form is present
     int d = server->arg("dscr").toInt();
@@ -6213,10 +6270,11 @@ static void pollButtons() {
 
 static void bumpBrightness(int d) {
   int v = (int)backlight + d;
-  if (v < 25) v = 25;
+  if (v < BL_FLOOR) v = BL_FLOOR;
   if (v > 255) v = 255;
   screenOff = false;
   setBacklight((uint8_t)v);
+  saveBacklight();                   // a swipe is a setting too
 }
 
 // CST816 gesture codes: 1 up, 2 down, 3 left, 4 right, 5 tap, 0x0B dbl, 0x0C long
@@ -6457,7 +6515,13 @@ void setup() {
   // honest, the text steps down until it really fits, and anything still too
   // long clips instead of folding.
   gfx->setTextWrap(false);
-  setBacklight(255);
+  // The saved level, read here rather than in loadCreds() so the splash is
+  // already at it. Starting at full and dropping later lit up a dark bedroom
+  // on every restart.
+  prefs.begin("headroom", true);
+  uint8_t bl = prefs.getUChar("bl", 255);
+  prefs.end();
+  setBacklight(bl < BL_FLOOR ? BL_FLOOR : bl);
   initLayout();                      // must precede any drawing
   drawSplash("starting...", nullptr);
   sensorsBegin();                    // touch + IMU on the shared I2C bus
