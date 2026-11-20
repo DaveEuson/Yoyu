@@ -620,6 +620,17 @@ static String   pushToken;            // optional shared secret; when set, the
                                       // companion must send it (X-Push-Token) to
                                       // push data or pair. Empty = open (default).
 static char     pollStatus[48] = "";  // last on-device poll result (shown when no data)
+// Why the companion couldn't read usage ("Sign in to Claude Code on your
+// computer..."), pushed in place of windows. Shown only while there are no
+// windows, and only while it keeps arriving: the companion resends it every
+// cycle, and the window covers its longest rate-limit backoff (30 min).
+static char     companionNotice[96] = "";
+static unsigned long noticeAt = 0;
+static const unsigned long NOTICE_FRESH_MS = 40UL * 60UL * 1000UL;
+static const char *freshNotice() {
+  return companionNotice[0] && millis() - noticeAt < NOTICE_FRESH_MS
+             ? companionNotice : nullptr;
+}
 
 // UI / input state (Phase 1.5)
 static const int BOOT_BTN    = BOOT_PIN; // BOOT: hold to factory reset
@@ -1146,6 +1157,47 @@ struct RowInfo {
 };
 static void fillRow(RowInfo &r, const Window &w);
 static void drawReadout(RowInfo *rows, int n, int y0, int h);
+#define OUT_MAXLINES 5
+static uint8_t wrapFit(const char *t, int maxW, int maxH, uint8_t want,
+                       char lines[OUT_MAXLINES][48], int *nOut);
+
+// A sentence, word-wrapped and centred in a band (design units). Takes the
+// largest size up to `want` whose lines fit, so the same text reads on the
+// 172px C6 as on the 480px AMOLED.
+static void drawWrapped(const char *t, int top, int bottom, uint8_t want, uint16_t color) {
+  char lines[OUT_MAXLINES][48];
+  int n = 0;
+  const int boxH = mapLen(bottom - top);
+  uint8_t sz = wrapFit(t, scrW - mapLen(16), boxH, mapSz(want), lines, &n);
+  const int lead = 10 * sz;
+  int y = mapY(top) + (boxH - n * lead) / 2;
+  if (y < mapY(top)) y = mapY(top);
+  gfx->setTextSize(sz);
+  gfx->setTextColor(color);
+  for (int i = 0; i < n; i++) {
+    int16_t x1, y1; uint16_t w, h;
+    gfx->getTextBounds(lines[i], 0, 0, &x1, &y1, &w, &h);
+    int x = (scrW - (int)w) / 2;
+    gfx->setCursor(x < 0 ? 0 : x, y + i * lead);
+    gfx->print(lines[i]);
+  }
+}
+
+// The board's own poll result, said as something to do rather than a log line.
+static const char *plainStatus(const char *s, char *out, size_t n) {
+  unsigned long mins = 0;
+  if (!strcmp(s, "waiting for your computer"))
+    return "Waiting for your computer. Turn it on and open Yoyu there, signed in to Claude Code.";
+  if (!strcmp(s, "needs pairing once more") || strstr(s, "re-pair"))
+    return "Pair me once more: on your computer, open Yoyu and choose Pair board.";
+  if (sscanf(s, "rate limited - waiting ~%lum", &mins) == 1) {
+    snprintf(out, n, "Anthropic is limiting usage checks. Trying again in about %lu min.", mins);
+    return out;
+  }
+  if (!strcmp(s, "can't reach Anthropic"))
+    return "Can't reach Anthropic. Check this Wi-Fi has internet.";
+  return s;
+}
 
 static void drawMeters() {
   gfx->fillScreen(C_BG);
@@ -1178,31 +1230,31 @@ static void drawMeters() {
   }
 
   if (nWindows == 0) {
-    if (selfHosted) {
-      bool err = pollStatus[0] && strcmp(pollStatus, "not paired yet") != 0;
-      if (err)
-        drawCentered(pollStatus, 150, 1, C_WARN);   // errors can be long: keep compact
-      else
-        drawCentered("Fetching usage...", 148, 2, C_MUTED);
-      if (strstr(pollStatus, "re-pair")) {
-        drawCentered("run the companion app on your", 176, 1, C_ACC);
-        drawCentered("computer to sign the board back in", 192, 1, C_ACC);
-        drawCentered("companion.py --pair", 212, 1, C_INK);
-        // The step people get stuck on. Whatever signed this board out has
-        // usually signed the computer out too -- they share one Claude login
-        // and rotate each other's token -- so the instruction above fails with
-        // its own "no login" error and the two look like separate faults.
-        drawCentered("if that says no login: claude /login", 228, 1, C_MUTED);
-      }
-      // Always show where this board is. Auto-discovery can land on the wrong
-      // device (another Yoyu on the LAN answers first), and without the
-      // address there's no way to point the companion at the right one.
-      if (err && WiFi.status() == WL_CONNECTED) {
+    // Say what is in the way, in words someone who has never seen a terminal
+    // can act on. The companion's reason wins: it is the one that knows the
+    // computer is signed out, which is the usual cause of a blank board.
+    const char *why = freshNotice();
+    bool fromPoll = false;
+    char plain[96];
+    if (!why && selfHosted && pollStatus[0] && strcmp(pollStatus, "not paired yet") != 0) {
+      why = plainStatus(pollStatus, plain, sizeof(plain));
+      fromPoll = true;
+    }
+    if (why) {
+      drawCentered("Can't show your usage", 100, 1, C_WARN);
+      drawWrapped(why, 116, 236, 2, C_INK);
+      // Show where this board is. Auto-discovery can land on the wrong device
+      // (another Yoyu on the LAN answers first), and without the address
+      // there's no way to point the companion at the right one. Not needed
+      // when the companion's own notice got here: it has found the board.
+      if (fromPoll && WiFi.status() == WL_CONNECTED) {
         snprintf(buf, sizeof(buf), "%s:%d",
                  WiFi.localIP().toString().c_str(), API_PORT);
         drawCentered(buf, 246, 1, C_MUTED);
         drawCentered("--pi http://<that address>", 262, 1, C_MUTED);
       }
+    } else if (selfHosted) {
+      drawCentered("Fetching usage...", 148, 2, C_MUTED);
     } else if (lastPushMs == 0) {
       drawCentered("Set me up", 116, 3, C_INK);
       drawCentered("open in a browser:", 154, 1, C_MUTED);
@@ -2182,7 +2234,6 @@ static void whenWords(time_t when, char *out, size_t n) {
 // built-in font is 6x8 and scales in whole steps, so this is arithmetic --
 // and wrapping here rather than letting the library do it is the only way to
 // know how many lines there will be before committing to a size.
-#define OUT_MAXLINES 5
 static uint8_t wrapFit(const char *t, int maxW, int maxH, uint8_t want,
                        char lines[OUT_MAXLINES][48], int *nOut) {
   for (uint8_t sz = want; ; sz--) {
@@ -3680,6 +3731,8 @@ static void handleStatus() {
   // board on a shelf — or more than one at a time — undiagnosable remotely.
   // pollStatus is the string the meters print when they have no data.
   doc["poll_status"] = pollStatus[0] ? pollStatus : (const char *)nullptr;
+  // What the companion last said is blocking it, while that is still current.
+  doc["notice"] = freshNotice();
   // Whether anything is actually visible. A board that is drawing correctly
   // onto a dark panel looks identical, over the network, to one that is fine.
   doc["screen_off"] = screenOff;
@@ -3771,11 +3824,25 @@ static void handlePush() {
     return;
   }
   JsonDocument doc;
-  if (deserializeJson(doc, body) != DeserializationError::Ok ||
-      !doc["windows"].is<JsonArray>()) {
+  if (deserializeJson(doc, body) != DeserializationError::Ok) {
     sendJson(400, "{\"ok\":false,\"error\":\"bad json\"}");
     return;
   }
+  // A notice-only push: the companion couldn't read usage and says why. The
+  // windows are left alone -- the last real reading beats a blank -- and so
+  // are the push timestamps, so a self-hosted board keeps polling for itself.
+  if (!doc["windows"].is<JsonArray>() && doc["notice"].is<const char *>()) {
+    strlcpy(companionNotice, doc["notice"], sizeof(companionNotice));
+    noticeAt = millis();
+    sendJson(200, "{\"ok\":true}");
+    if (nWindows == 0) drawScreen();
+    return;
+  }
+  if (!doc["windows"].is<JsonArray>()) {
+    sendJson(400, "{\"ok\":false,\"error\":\"bad json\"}");
+    return;
+  }
+  companionNotice[0] = 0;               // usage arrived: whatever blocked it is gone
   nWindows = 0;
   nWindowsSeen = 0;
   for (JsonObject w : doc["windows"].as<JsonArray>()) {
@@ -4473,6 +4540,7 @@ static bool fetchUsage(bool allowRefresh) {
     return false;
   }
   pollStatus[0] = 0;    // success -> clear any prior error
+  companionNotice[0] = 0;
   pollBackoffMs = 0;    // and drop back to the normal poll cadence
   lastPushMs = millis();
   noteUsageActivity();
