@@ -805,9 +805,34 @@ def pair_device(url, token="", code=None, ask_code=None):
     return True
 
 
+def _config_dir():
+    """Where the config lives, which has to outlast the process.
+
+    Next to the script when run from source. Never next to __file__ in the
+    frozen app: a PyInstaller one-file binary unpacks into a fresh temp folder
+    (_MEIxxxx) on every launch and deletes it on exit, so the board address and
+    the pairing's top-up key were thrown away each time the app closed. Every
+    restart, login or second copy started unpaired -- the board looked like it
+    would never stay connected.
+    """
+    if not getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(__file__))
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "Yoyu")
+    if sys.platform == "darwin":
+        return os.path.expanduser("~/Library/Application Support/Yoyu")
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "yoyu")
+
+
 def _config_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "companion.config.json")
+    d = _config_dir()
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        pass
+    return os.path.join(d, "companion.config.json")
 
 
 # ------------------------------------------------------ auto-discover the Pi
