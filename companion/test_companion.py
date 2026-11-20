@@ -948,6 +948,34 @@ class InstallTests(_QuietTest):
         self.assertIsNone(companion.sweep_stale_install())
 
 
+class ConfigPathTests(_QuietTest):
+    """The frozen app's config must survive the process.
+
+    A one-file binary's __file__ is inside the temp folder it unpacks to on
+    every launch, so a config kept next to it -- with the board address and
+    the pairing's top-up key -- vanished each time the app closed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        had = hasattr(sys, "frozen")
+        old = getattr(sys, "frozen", None)
+        self.addCleanup(lambda: setattr(sys, "frozen", old) if had
+                        else (hasattr(sys, "frozen") and delattr(sys, "frozen")))
+
+    def test_frozen_config_is_not_next_to_the_unpacked_code(self):
+        sys.frozen = True
+        here = os.path.dirname(os.path.abspath(companion.__file__))
+        self.assertNotEqual(companion._config_dir(), here)
+        self.assertIn("yoyu", companion._config_dir().lower())
+
+    def test_source_config_stays_next_to_the_script(self):
+        if hasattr(sys, "frozen"):
+            del sys.frozen
+        here = os.path.dirname(os.path.abspath(companion.__file__))
+        self.assertEqual(companion._config_dir(), here)
+
+
 class PackagedInstallTests(_QuietTest):
     """A copy from apt must not be managed by this program.
 
