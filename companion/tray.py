@@ -327,17 +327,22 @@ def feed_once(urls):
     displaying it, and polling once per board would multiply the rate limiting
     that already bites here.
     """
+    # Whatever stops the read is also said on every board's own screen: the
+    # tray icon is hidden by default on Windows, so it can't be the only place.
     try:
         live = companion.get_live_windows()
     except companion.LiveUnavailable as exc:
         if getattr(exc, "rate_limited", False):
+            companion.push_notice(urls, "rate_limited")
             return "amber", "Rate limited by Anthropic — backing off", True
+        companion.push_notice(urls, "unavailable")
         return "amber", "Usage temporarily unreadable", False
     if not live:
         # "No Claude login" is true and useless: it does not say what to do, and
         # to somebody whose Claude Code is working in the next window it reads
         # as simply wrong. The tray has one short line, so spend it on the fix.
         st = companion.login_state()
+        companion.push_notice(urls, st)
         if st == "not_installed":
             return "red", "Claude Code isn't installed here — click for help", False
         if st == "signed_out":

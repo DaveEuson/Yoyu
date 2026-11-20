@@ -462,6 +462,66 @@ class LoginStateTests(unittest.TestCase):
         self.assertIn("rotate", text)
 
 
+class BoardNoticeTests(unittest.TestCase):
+    """What a board is told when this computer can't read usage.
+
+    The tray icon was the only place these reached, and Windows hides it, so
+    a new owner saw a blank board and concluded it would not connect.
+    """
+
+    def _check(self, state, *must_say):
+        payload = companion.board_notice(state)
+        # No windows key: the board keeps its last real reading, and firmware
+        # that predates notices rejects the push instead of blanking itself.
+        self.assertEqual(set(payload), {"notice"})
+        text = payload["notice"]
+        self.assertLessEqual(len(text), 95, "firmware keeps 95 characters")
+        text.encode("ascii")                 # the board's font has no em dash
+        for words in must_say:
+            self.assertIn(words, text)
+        return text
+
+    def test_not_installed(self):
+        self._check("not_installed", "Install Claude Code", "/login")
+
+    def test_never_signed_in(self):
+        self._check("never_signed_in", "Sign in", "claude", "/login")
+
+    def test_signed_out(self):
+        self._check("signed_out", "signed out", "claude", "/login")
+
+    def test_unreadable(self):
+        self._check("unreadable", "claude", "/login")
+
+    def test_ok_but_no_live_read_still_says_sign_in(self):
+        # login_state() can call a login fine that read_creds() still can't
+        # use; telling them to sign in again is the fix that works.
+        self.assertEqual(self._check("ok", "/login"),
+                         companion.board_notice("never_signed_in")["notice"])
+
+    def test_rate_limited(self):
+        self._check("rate_limited", "limiting")
+
+    def test_unavailable(self):
+        self._check("unavailable", "Trying again")
+
+    def test_push_notice_reaches_every_board_despite_one_failing(self):
+        sent = []
+
+        def fake_push(url, token, payload):
+            if "down" in url:
+                raise OSError("unreachable")
+            sent.append((url, payload))
+            return {"ok": True}
+
+        real, companion.push = companion.push, fake_push
+        self.addCleanup(setattr, companion, "push", real)
+        companion.push_notice(["http://down:8080", "http://a:8080",
+                               "http://b:8080"], "signed_out")
+        self.assertEqual([u for u, _ in sent], ["http://a:8080", "http://b:8080"])
+        self.assertEqual(sent[0][1], companion.board_notice("signed_out"))
+
+
 class _QuietTest(unittest.TestCase):
     """Silences the functions under test. Several of them report what they did
     to stdout, which is right in the companion and noise in a test run."""

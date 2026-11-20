@@ -1911,6 +1911,43 @@ def login_help(state=None, board_shares_account=False):
     return out
 
 
+# What the board's own screen says when this computer can't read usage. The
+# tray icon used to be the only place these reached, and Windows hides it by
+# default, so a board fed by a signed-out computer just sat there blank.
+# ASCII only (the board's font has no em dash) and short enough to wrap onto
+# the smallest panel; the firmware keeps 95 characters.
+BOARD_NOTICES = {
+    "not_installed": "Install Claude Code on your computer, then run claude and type /login",
+    "signed_out": "Claude Code signed out on your computer. Run claude, then /login",
+    "unreadable": "Sign in to Claude Code again on your computer: run claude, then /login",
+    "never_signed_in": "Sign in to Claude Code on your computer: run claude, then /login",
+    "rate_limited": "Anthropic is limiting usage checks for now. Trying again soon.",
+    "unavailable": "Can't read your usage right now. Trying again soon.",
+}
+
+
+def board_notice(state):
+    """The push payload that tells a board why it has no numbers.
+
+    No "windows" key, on purpose: the board keeps whatever real reading it
+    already has and only shows this while it has none. Firmware from before
+    this change rejects the push as bad JSON, which costs nothing.
+    """
+    return {"notice": BOARD_NOTICES.get(state, BOARD_NOTICES["never_signed_in"])}
+
+
+def push_notice(urls, state):
+    """Send board_notice(state) to every board. Best effort: the caller is
+    already reporting a failure, and an unreachable board is not a new one."""
+    payload = board_notice(state)
+    for url in ([urls] if isinstance(urls, str) else urls):
+        try:
+            push(url, "", payload)
+        except Exception:  # noqa: BLE001
+            pass
+    return payload
+
+
 # Console output stays ASCII on purpose. Windows terminals default to cp1252,
 # which cannot encode an em dash, so one printed at the moment of success came
 # out as "Paired http://yoyu.local:8080 ? the board reads your usage itself now"
